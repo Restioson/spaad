@@ -3,6 +3,12 @@ name = "spaad"
 version = "0.1.0"
 authors = ["Restioson <restiosondev@gmail.com>"]
 edition = "2018"
+license = "MPL-2.0"
+repository = "https://github.com/Restioson/spaad"
+documentation = "https://docs.rs/spaad"
+readme = "README.md"
+description = "Zero boilerplate actor systems"
+keywords = ["async", "actor", "futures", "tokio", "async-std", "xtra"]
 
 [lib]
 proc-macro = true
