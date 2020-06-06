@@ -1,3 +1,4 @@
+#![cfg_attr(doc, allow(unused_braces))]
 #![feature(proc_macro_diagnostic)]
 use proc_macro::TokenStream;
 use syn::*;
@@ -12,7 +13,6 @@ pub fn entangled(_args: TokenStream, input: TokenStream) -> proc_macro::TokenStr
     entangle(input)
 }
 
-
 enum EntangledItem {
     Struct(ItemStruct),
     Impl(ItemImpl),
@@ -21,12 +21,10 @@ enum EntangledItem {
 impl Parse for EntangledItem {
     fn parse(input: ParseStream) -> Result<Self> {
         let lookahead = input.lookahead1();
-        let expanded = if lookahead.peek(Token![pub]) ||
-            lookahead.peek(Token![struct])
-        {
-            EntangledItem::Struct(input.parse()?)
-        } else {
+        let expanded = if lookahead.peek(Token![impl]) {
             EntangledItem::Impl(input.parse()?)
+        } else {
+            EntangledItem::Struct(input.parse()?)
         };
         Ok(expanded)
     }
@@ -43,19 +41,19 @@ fn entangle(input: TokenStream) -> proc_macro::TokenStream {
 }
 
 fn entangle_struct(struct_def: ItemStruct) -> proc_macro2::TokenStream {
-    let name = struct_def.ident;
-    let actor = format_ident!("{}Actor", name);
-    let vis = struct_def.vis;
-    let fields = struct_def.fields;
-
-    let (impl_generics, ty_generics, where_clause) = struct_def.generics.split_for_impl();
+    let ItemStruct { attrs, vis, ident, generics, fields, semi_token, .. } = struct_def;
+    let actor = format_ident!("__{}Actor", ident);
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     quote! {
-        #vis struct #name#impl_generics #where_clause {
+        #[derive(Clone)]
+        #vis struct #ident#impl_generics #where_clause {
             addr: xtra::Address<#actor#ty_generics>,
         }
 
-        struct #actor#impl_generics #where_clause #fields
+        #(#attrs)*
+        #[doc(hidden)]
+        pub struct #actor#impl_generics #where_clause #fields #semi_token
     }
 }
 
@@ -111,7 +109,7 @@ fn entangle_handlers_impl(handlers_impl: ItemImpl) -> proc_macro2::TokenStream {
     let actor_items = handlers_impl.items.iter();
     let transformed_items = transform_items(&handlers_impl, handlers_impl.items.iter());
     let name = get_name(&handlers_impl);
-    let actor = format_ident!("{}Actor", name);
+    let actor = format_ident!("__{}Actor", name);
 
     quote! {
         impl#impl_generics #actor#ty_generics #where_clause {
@@ -145,7 +143,7 @@ fn transform_method(
     method: ImplItemMethod,
 ) -> proc_macro2::TokenStream {
     let name = get_name(&impl_block);
-    let actor_name = format_ident!("{}Actor", name);
+    let actor_name = format_ident!("__{}Actor", name);
     let (impl_generics, ty_generics, _) = impl_block.generics.split_for_impl();
 
     let ImplItemMethod { attrs, vis, mut sig, .. } = method;
@@ -384,7 +382,7 @@ fn transform_ret(r: &ReturnType) -> Option<proc_macro2::TokenStream> {
 fn entangle_actor_impl(actor_impl: ItemImpl) -> proc_macro2::TokenStream {
     let (impl_generics, ty_generics, where_clause) = actor_impl.generics.split_for_impl();
     let items = actor_impl.items.iter();
-    let name = format_ident!("{}Actor", get_name(&actor_impl));
+    let name = format_ident!("__{}Actor", get_name(&actor_impl));
 
     quote! {
         impl#impl_generics xtra::Actor for #name#ty_generics #where_clause {

@@ -1,0 +1,11 @@
+[package]
+name = "spaad_example_generated"
+version = "0.1.0"
+authors = ["Restioson <restiosondev@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+spaad = { path = "../", features = ["with-tokio-0_2"] }
+xtra = "^0.2"

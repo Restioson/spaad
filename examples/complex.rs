@@ -1,25 +1,24 @@
-#![feature(type_alias_impl_trait)]
-#![feature(generic_associated_types)]
-#![allow(dead_code, unused_mut)]
+#![feature(type_alias_impl_trait, generic_associated_types)]
 
 use tokio;
 
 #[spaad::entangled]
-struct X<T: 'static + Send, A: 'static + Send> {
+#[derive(Clone)]
+struct X<T: 'static + Send + Clone, A: 'static + Send + Clone> {
     t: T,
     a: A,
     b: i32,
 }
 
 #[spaad::entangled]
-impl<T: 'static + Send, A: 'static + Send> xtra::Actor for X<T, A> {
+impl<T: 'static + Send + Clone, A: 'static + Send + Clone> xtra::Actor for X<T, A> {
     fn started(&mut self, _: &mut xtra::Context<Self>) {
 
     }
 }
 
 #[spaad::entangled]
-impl<T: 'static + Send, A: 'static + Send> X<T, A> {
+impl<T: 'static + Send + Clone, A: 'static + Send + Clone> X<T, A> {
     fn new(t: T, a: A) -> Self {
         Self {
             t,
