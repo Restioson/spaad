@@ -23,8 +23,8 @@ impl Printer {
 #[tokio::main]
 async fn main() {
     let printer: Printer = Printer::spawn();
-     loop {
+    loop {
         printer.print("hello".to_string()).await;
-     }
+    }
 }
 

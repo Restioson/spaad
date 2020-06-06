@@ -32,7 +32,7 @@ impl<T: 'static + Send, A: 'static + Send> X<T, A> {
         self.b += 1;
         h += 1.0;
         ctx.stop();
-        println!("hello");
+        println!("hello {}", h);
     }
 
     async fn bar(&mut self) -> Result<(), xtra::Disconnected> {
@@ -47,5 +47,5 @@ async fn main() {
     let x: X<u32, u32> = X::<u32, u32>::spawn(1, 2);
     let mut x: X<u32, u32> = x;
     x.foo(1.0).await;
-    x.bar().await.expect("a");
+    assert!(x.bar().await.is_err()); // disconnected, so we assert that it returned error
 }
