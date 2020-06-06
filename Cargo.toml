@@ -8,7 +8,7 @@ repository = "https://github.com/Restioson/spaad"
 documentation = "https://docs.rs/spaad"
 readme = "README.md"
 description = "Zero boilerplate actor systems"
-keywords = ["async", "actor", "futures", "tokio", "async-std", "xtra"]
+keywords = ["async", "actor", "futures", "tokio", "async-std"]
 
 [lib]
 proc-macro = true
@@ -29,7 +29,6 @@ with-async_std-1 = ["async-std", "xtra/with-async_std-1"]
 name = "complex"
 path = "examples/complex.rs"
 required-features = ["with-tokio-0_2", "tokio/full"]
-
 
 [[example]]
 name = "basic"
