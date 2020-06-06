@@ -1,0 +1,31 @@
+[package]
+name = "spaad"
+version = "0.1.0"
+authors = ["Restioson <restiosondev@gmail.com>"]
+edition = "2018"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+quote = "^1"
+syn = { version = "^1", features = ["full", "extra-traits"] }
+proc-macro2 = "^1"
+xtra = "^0.2"
+tokio = { version = "^0.2", features = ["rt-core", "time"], optional = true }
+async-std = { version = "^1", features = ["unstable"], optional = true }
+
+[features]
+with-tokio-0_2 = ["tokio", "xtra/with-tokio-0_2"]
+with-async_std-1 = ["async-std", "xtra/with-async_std-1"]
+
+[[example]]
+name = "complex"
+path = "examples/complex.rs"
+required-features = ["with-tokio-0_2", "tokio/full"]
+
+
+[[example]]
+name = "basic"
+path = "examples/basic.rs"
+required-features = ["with-tokio-0_2", "tokio/full"]
