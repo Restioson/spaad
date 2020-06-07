@@ -1,5 +1,3 @@
-#![feature(type_alias_impl_trait, generic_associated_types)]
-
 use std::future::Future;
 
 #[spaad::entangled]
@@ -57,16 +55,11 @@ impl xtra::Message for Notification {
 }
 
 #[spaad::entangled]
+#[async_trait::async_trait]
 impl<T: 'static + Send + Clone, A> xtra::Handler<Notification> for X<T, A>
     where A: 'static + Send + Clone
 {
-    type Responder<'a> = impl Future<Output = ()> + 'a;
-
-    fn handle(
-        &mut self,
-        _: Notification,
-        ctx: &mut xtra::Context<Self>
-    ) -> Self::Responder<'_> {
+    async fn handle(&mut self, _: Notification, ctx: &mut xtra::Context<Self>) {
         println!("stopping");
         ctx.stop();
         async {}

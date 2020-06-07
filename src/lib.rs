@@ -90,11 +90,16 @@ enum EntangledItem {
 
 impl Parse for EntangledItem {
     fn parse(input: ParseStream) -> Result<Self> {
+        let attrs = input.call(Attribute::parse_outer)?;
         let lookahead = input.lookahead1();
         let expanded = if lookahead.peek(Token![impl]) {
-            EntangledItem::Impl(input.parse()?)
+            let mut item: ItemImpl = input.parse()?;
+            item.attrs = attrs;
+            EntangledItem::Impl(item)
         } else {
-            EntangledItem::Struct(input.parse()?)
+            let mut item: ItemStruct = input.parse()?;
+            item.attrs = attrs;
+            EntangledItem::Struct(item)
         };
         Ok(expanded)
     }
@@ -400,6 +405,33 @@ fn transform_method(
         call_inputs.insert(ctx_idx - 1,quote!(ctx))
     }
 
+    #[cfg(feature = "stable")]
+    let handle = quote! {
+        async fn handle(&mut self, m: Msg, ctx: &mut Context<Self>) -> #result {
+            let Msg { #(#msg_members_destructured)* } = m;
+            self.#fn_name(#(#call_inputs),*).await
+        }
+    };
+    #[cfg(not(feature = "stable"))]
+    let handle = quote! {
+        fn handle<'a>(&'a mut self, m: Msg, ctx: &'a mut Context<Self>) -> Self::Responder<'a> {
+            let Msg { #(#msg_members_destructured)* } = m;
+            self.#fn_name(#(#call_inputs),*)
+        }
+    };
+
+    #[cfg(not(feature = "stable"))]
+    let responder = quote !{
+        type Responder<'a> = impl std::future::Future<Output = #result> + 'a;
+    };
+    #[cfg(feature = "stable")]
+    let responder = quote!();
+
+    #[cfg(not(feature = "stable"))]
+    let async_trait = quote!();
+    #[cfg(feature = "stable")]
+    let async_trait = quote!(#[async_trait::async_trait]);
+
     quote! {
         #[allow(unused_mut)]
         #(#attrs)* #vis fn #fn_name(
@@ -413,13 +445,9 @@ fn transform_method(
                 type Result = #result;
             }
 
+            #async_trait
             impl#impl_generics Handler<Msg> for #actor_name#ty_generics #where_clause {
-                type Responder<'a> = impl std::future::Future<Output = #result> + 'a;
-
-                fn handle<'a>(&'a mut self, m: Msg, ctx: &'a mut Context<Self>) -> Self::Responder<'a> {
-                    let Msg { #(#msg_members_destructured)* } = m;
-                    self.#fn_name(#(#call_inputs),*)
-                }
+                #responder #handle
             }
 
             let f = self.addr.send(Msg{ #(#msg_members_destructured)* });
