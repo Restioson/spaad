@@ -88,14 +88,16 @@ documentation or `complex.rs` in the examples directory. To see the generated co
 - IDE support. It is possible in some IDEs (only tested on IntelliJ IDEA with the Rust plugin) to jump to definition.
   This is only partial, as in some cases the IDE does not understand the change in the mutability of the `self` parameter
   (only `&self` is required when sending a message, but it looks as though it is declared `&mut self`).
-- Harder to cause undefined behaviour in xtra. In xtra, it is possible to cause undefined behaviour by using an
-  ill-typed type parameter as the `Responder` type in the `Handler` trait 
-  (i.e `impl<R> Handler<...> for ... { type Responder = R ... }`). However, since spaad defines this for the user, this
-  is not possible. To my (Restioson's) knowledge, this is the only way to cause UB in xtra (please PR a change to the
-  documentation with any other ways!)
+- Can use nightly API with less chance of UB (by removing an opportunity for UB in GATs), and in a completely transparent
+  manner. 
 
 ## Disadvantages
 
-- Similar caveats to xtra itself.
+- Similar caveat to xtra itself: immaturity.
 - IDE support is not full. In some cases, there can be issues. This could be resolved by proc macro expansion, but that
-  appears to be a way off.
+  appears to be a way off. It appears that Rust Analyzer handles this slightly better than IntelliJ Rust, though this
+  may change.
+
+## Nightly API
+
+In order to enable the xtra nightly API, disable the default `stable` feature in your `Cargo.toml`.

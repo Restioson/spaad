@@ -74,8 +74,8 @@ impl<T: 'static + Send + Clone, A> AsRef<i32> for X<T, A>
 
 #[tokio::main]
 async fn main() {
+    #[allow(unused_mut)] // for intellij we set as mut :)
     let x: X<u32, u32> = X::<u32, u32>::spawn(1, 2);
-    let x: X<u32, u32> = x;
     x.foo(1.0).await;
     assert!(x.bar().await.is_err()); // disconnected, so we assert that it returned error
 }
