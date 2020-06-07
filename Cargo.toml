@@ -10,30 +10,29 @@ readme = "README.md"
 description = "Zero boilerplate actor systems"
 keywords = ["async", "actor", "futures", "tokio", "async-std"]
 
-[lib]
-proc-macro = true
+[workspace]
+members = ["spaad_internal"]
 
 [dependencies]
-quote = "^1"
-syn = { version = "^1", features = ["full", "extra-traits"] }
-proc-macro2 = "^1"
+spaad_internal = { path = "spaad_internal" }
 xtra = { path = "../xtra" }
 async-trait = { version = "^0.1", optional = true }
-tokio = { version = "^0.2", features = ["rt-core", "time"], optional = true }
-async-std = { version = "^1", features = ["unstable"], optional = true }
 
 [features]
 default = ["stable"]
-stable = ["async-trait", "xtra/stable"]
-with-tokio-0_2 = ["tokio", "xtra/with-tokio-0_2"]
-with-async_std-1 = ["async-std", "xtra/with-async_std-1"]
+stable = ["async-trait", "xtra/stable", "spaad_internal/stable"]
+with-tokio-0_2 = ["xtra/with-tokio-0_2", "spaad_internal/with-tokio-0_2"]
+with-async_std-1 = ["xtra/with-async_std-1", "spaad_internal/with-async_std-1"]
+
+[dev-dependencies]
+tokio = { version = "^0.2", features = ["full"] }
 
 [[example]]
 name = "complex"
 path = "examples/complex.rs"
-required-features = ["with-tokio-0_2", "tokio/full"]
+required-features = ["with-tokio-0_2"]
 
 [[example]]
 name = "basic"
 path = "examples/basic.rs"
-required-features = ["with-tokio-0_2", "tokio/full"]
+required-features = ["with-tokio-0_2"]

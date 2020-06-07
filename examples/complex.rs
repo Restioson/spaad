@@ -1,5 +1,3 @@
-use std::future::Future;
-
 #[spaad::entangled]
 #[derive(Clone)]
 struct X<T: 'static + Send + Clone, A> where A: 'static + Send + Clone {
@@ -62,7 +60,6 @@ impl<T: 'static + Send + Clone, A> xtra::Handler<Notification> for X<T, A>
     async fn handle(&mut self, _: Notification, ctx: &mut xtra::Context<Self>) {
         println!("stopping");
         ctx.stop();
-        async {}
     }
 }
 
@@ -78,7 +75,7 @@ impl<T: 'static + Send + Clone, A> AsRef<i32> for X<T, A>
 #[tokio::main]
 async fn main() {
     let x: X<u32, u32> = X::<u32, u32>::spawn(1, 2);
-    let mut x: X<u32, u32> = x;
+    let x: X<u32, u32> = x;
     x.foo(1.0).await;
     assert!(x.bar().await.is_err()); // disconnected, so we assert that it returned error
 }
