@@ -78,7 +78,9 @@ use std::ops::Deref;
 /// Similarly, the type must be named `Context` - it cannot be renamed by re-importing.
 #[proc_macro_attribute]
 pub fn entangled(_args: TokenStream, input: TokenStream) -> proc_macro::TokenStream {
-    entangle(input)
+    let x = entangle(input);
+    println!("{}", x);
+    x
 }
 
 enum EntangledItem {
@@ -119,6 +121,16 @@ fn entangle_struct(struct_def: ItemStruct) -> proc_macro2::TokenStream {
             addr: xtra::Address<#actor#ty_generics>,
         }
 
+        impl#impl_generics #ident#ty_generics #where_clause {
+            #vis fn into_address(self) -> xtra::Address<#actor#ty_generics> {
+                self.addr
+            }
+
+            #vis fn address(&self) -> &xtra::Address<#actor#ty_generics> {
+                &self.addr
+            }
+        }
+
         #(#attrs)*
         #[doc(hidden)]
         pub struct #actor#impl_generics #where_clause #fields #semi_token
@@ -127,17 +139,8 @@ fn entangle_struct(struct_def: ItemStruct) -> proc_macro2::TokenStream {
 
 fn entangle_impl(impl_block: ItemImpl) -> proc_macro2::TokenStream {
     match &impl_block.trait_ {
-        Some(trait_) if trait_.1.segments.last().unwrap().ident == "Actor" => {
-            entangle_actor_impl(impl_block)
-        },
+        Some(_) => entangle_trait_impl(impl_block),
         None => entangle_handlers_impl(impl_block),
-        _ => {
-            impl_block.span()
-                .unwrap()
-                .error("`spaad::entangled` can only be called impls of `xtra::Actor`")
-                .emit();
-            unreachable!()
-        },
     }
 }
 
@@ -212,7 +215,7 @@ fn transform_method(
 ) -> proc_macro2::TokenStream {
     let name = get_name(&impl_block);
     let actor_name = format_ident!("__{}Actor", name);
-    let (impl_generics, ty_generics, _) = impl_block.generics.split_for_impl();
+    let (impl_generics, ty_generics, where_clause) = impl_block.generics.split_for_impl();
 
     let ImplItemMethod { attrs, vis, mut sig, .. } = method;
 
@@ -410,7 +413,7 @@ fn transform_method(
                 type Result = #result;
             }
 
-            impl#impl_generics Handler<Msg> for #actor_name#ty_generics {
+            impl#impl_generics Handler<Msg> for #actor_name#ty_generics #where_clause {
                 type Responder<'a> = impl std::future::Future<Output = #result> + 'a;
 
                 fn handle<'a>(&'a mut self, m: Msg, ctx: &'a mut Context<Self>) -> Self::Responder<'a> {
@@ -447,14 +450,20 @@ fn transform_ret(r: &ReturnType) -> Option<proc_macro2::TokenStream> {
     None
 }
 
-fn entangle_actor_impl(actor_impl: ItemImpl) -> proc_macro2::TokenStream {
-    let (impl_generics, ty_generics, where_clause) = actor_impl.generics.split_for_impl();
-    let items = actor_impl.items.iter();
-    let name = format_ident!("__{}Actor", get_name(&actor_impl));
-
-    quote! {
-        impl#impl_generics xtra::Actor for #name#ty_generics #where_clause {
-            #(#items)*
+fn entangle_trait_impl(mut trait_impl: ItemImpl) -> proc_macro2::TokenStream {
+    match &mut *trait_impl.self_ty {
+        Type::Path(ref mut path) => {
+            let last_seg = path.path.segments.last_mut().unwrap();
+            let ident = &mut last_seg.ident;
+            *ident = format_ident!("__{}Actor", ident);
+        }
+        _ => {
+            trait_impl.span()
+                .unwrap()
+                .error("`spaad::entangle` can only be called on impls of an actor struct")
+                .emit()
         }
     }
+
+    quote!(#trait_impl)
 }
