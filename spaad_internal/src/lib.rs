@@ -1,5 +1,8 @@
 #![cfg_attr(doc, allow(unused_braces))]
 #![feature(proc_macro_diagnostic)]
+
+extern crate proc_macro;
+
 use proc_macro::TokenStream;
 use syn::*;
 use quote::{quote, format_ident};
@@ -77,8 +80,22 @@ use std::ops::Deref;
 /// the actor cotnext add an argument to the function with `&mut Context<Self>` as the type.
 /// Similarly, the type must be named `Context` - it cannot be renamed by re-importing.
 #[proc_macro_attribute]
-pub fn entangled(_args: TokenStream, input: TokenStream) -> proc_macro::TokenStream {
+pub fn entangled(_args: TokenStream, input: TokenStream) -> TokenStream {
     entangle(input)
+}
+
+/// Used to make sure a function does not become an externally-visible message handler.
+///
+/// ## Usage
+///
+/// ```ignore
+/// #[spaad::skip]
+/// async fn not_a_handler() {/* ... */}
+/// ```
+#[proc_macro_attribute]
+pub fn skip(_args: TokenStream, input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as ImplItemMethod);
+    TokenStream::from(quote!(#input))
 }
 
 enum EntangledItem {
@@ -147,6 +164,10 @@ fn entangle_impl(impl_block: ItemImpl) -> proc_macro2::TokenStream {
     }
 }
 
+fn get_name_from_path(p: &Path) -> &proc_macro2::Ident {
+    &p.segments.last().unwrap().ident
+}
+
 fn get_name_from_ty(ty: &syn::Type) -> &proc_macro2::Ident {
     let ty_path = match &*ty {
         Type::Path(path) => &path.path,
@@ -161,7 +182,7 @@ fn get_name_from_ty(ty: &syn::Type) -> &proc_macro2::Ident {
             unreachable!()
         },
     };
-    &ty_path.segments.last().unwrap().ident
+    get_name_from_path(ty_path)
 }
 
 fn get_name(block: &ItemImpl) -> &proc_macro2::Ident {
@@ -175,7 +196,7 @@ fn get_name(block: &ItemImpl) -> &proc_macro2::Ident {
             unreachable!()
         },
     };
-    &self_ty_path.segments.last().unwrap().ident
+    get_name_from_path(self_ty_path)
 }
 
 fn entangle_handlers_impl(handlers_impl: ItemImpl) -> proc_macro2::TokenStream {
@@ -220,17 +241,30 @@ fn transform_method(
     let actor_name = format_ident!("__{}Actor", name);
     let (impl_generics, ty_generics, where_clause) = impl_block.generics.split_for_impl();
 
+    let skip = method.attrs.iter()
+        .map(|attr| attr.path.segments.iter())
+        .any(|mut iter| {
+            let mut next = || iter.next_back().map(|i| i.ident.to_string());
+            matches!(next().as_deref(), Some("skip"))
+        });
+
+    if skip { return quote!() }
+
     let ImplItemMethod { attrs, vis, mut sig, .. } = method;
 
     if sig.asyncness.is_none() &&
         matches!(sig.inputs.first(), Some(FnArg::Typed(_)) | None)
     {
         let fn_name = &sig.ident;
+        let mut has_receiver = false;
         let inputs: Vec<_> = sig.inputs
             .iter()
-            .map(|arg| match arg {
+            .filter_map(|arg| match arg {
                 FnArg::Typed(t) => Some(&t.pat),
-                _ => unreachable!(),
+                FnArg::Receiver(_) => {
+                    has_receiver = true;
+                    None
+                },
             })
             .collect();
         let arg_inputs = &sig.inputs;
@@ -277,7 +311,7 @@ fn transform_method(
 
         return quote! {
             #(#attrs)* #vis #sig {
-                #actor_name::#ty_generics::#fn_name(#(#inputs),*)
+                ##actor_name::#ty_generics::#fn_name(#(#inputs),*)
             }
         }
     }
@@ -404,10 +438,17 @@ fn transform_method(
     }
 
     #[cfg(feature = "stable")]
+    let dot_await = if sig.asyncness.is_some() {
+        quote!(.await)
+    } else {
+        quote!()
+    };
+
+    #[cfg(feature = "stable")]
     let handle = quote! {
         async fn handle(&mut self, m: Msg, ctx: &mut Context<Self>) -> #result {
             let Msg { #(#msg_members_destructured)* } = m;
-            self.#fn_name(#(#call_inputs),*).await
+            self.#fn_name(#(#call_inputs),*)#dot_await
         }
     };
     #[cfg(not(feature = "stable"))]

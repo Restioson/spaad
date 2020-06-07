@@ -1,7 +1,7 @@
 extern crate spaad_internal;
 
 #[doc(inline)]
-pub use spaad_internal::entangled;
+pub use spaad_internal::*;
 
 #[doc(hidden)]
 pub mod export {

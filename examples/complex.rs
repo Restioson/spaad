@@ -44,6 +44,17 @@ impl<T: 'static + Send + Clone, A> X<T, A>
 
     async fn blabla(&mut self) {
         println!("middle!");
+        self.not_a_handler().await;
+    }
+
+    #[spaad::skip]
+    async fn not_a_handler(&mut self) {
+        println!("almost there!");
+        self.not_async();
+    }
+
+    fn not_async(&self) {
+        println!("one more!!");
     }
 }
 
