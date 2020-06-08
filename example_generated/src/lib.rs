@@ -37,7 +37,7 @@ pub mod simple {
         }
         #[allow(unused_mut)]
         pub fn print(&self, string: String) -> impl std::future::Future<Output = ()> {
-            async {()}
+            async { () }
         }
     }
 }
@@ -75,11 +75,11 @@ pub mod complex {
         }
         #[allow(unused_mut)]
         pub fn foo(&self, mut h: f64) -> impl std::future::Future<Output = ()> {
-            async {()}
+            async { () }
         }
         #[allow(unused_mut)]
         pub fn bar(&self) -> impl std::future::Future<Output = Result<(), xtra::Disconnected>> {
-            async {Ok(())}
+            async { Ok(()) }
         }
     }
 }

@@ -24,9 +24,13 @@ my_actor.print().await;
 Since spaad uses nightly features such as GATs and Type Alias Impl Trait, those features will need to be enabled. These
 are the same features generally required for xtra.
 
-spaad exports one thing: the proc macro `spaad::entangled`. This is used as an attribute on the actor struct definition,
-`Actor` implementation, and on an impl block in which the handler functions are used.
+The proc macro `spaad::entangled` is the core item of spaad. It creates the messages and `Handler` implementations for
+each handler from its signature, as well as a struct wrapping the address, which has ergonomic function names for sending messages.
+The end result is that it looks as though no actors are involved to both the caller and callee. The name of the crate is
+a cheeky reference to what Einstein called quantum entanglement - "_**sp**ooky **a**ction **a**t a **d**istance_" - since
+in quantum entanglement it also appears that one particle's state is "magically" changed.
 
+This macro is used as an attribute on the actor struct definition and its impl blocks.
 
 ## Example 
 ```rust
@@ -58,25 +62,26 @@ impl Printer {
         println!("Printing {}. Printed {} times so far.", string, self.times);
     }
 }
+
+#[tokio::main]
+fn main() {
+    let printer: Printer = Printer::new(); // `new` spawns the actor onto the tokio runtime
+    printer.print().await;
+}
 ```
+
+The generated `Printer` type does not, in fact, contain all members of the strucy, but rather its address.
+The actual structure is strictly internal and cannot be interacted with except by sending messages or from inside its
+impl blocks. When referred to inside of impl blocks as a type, `Self` must be used, as it will be renamed.
 
 It is important to note that the `new` function is a special case. If it is present, the proc macro will also emit a
-`create` method for the actor wrapper. It can take arguments. If the `with-tokio-0_2` or `with-async_std-1_0` features
-are enabled, then it will also emit a `spawn` method. These are both very similar to the `xtra::Actor` methods of the
-same names.
-
-Messages can then be sent to actors as such:
-```rust
-my_actor.print().await;
-```
+`create` method for the actor wrapper, corresponding to `Actor::create`. It can take arguments. If the `with-tokio-0_2`
+or `with-async_std-1_0` features are enabled, then it will also emit a `new` method, which corresponds to `Actor::spawn`.
 
 If you do not want to `await` for the message to complete processing, you can do the following:
 ```rust
 let _ = my_actor.print(); // Binding to avoid #[must_use] warning on Future
 ```
-
-The proc macro will create the given struct (in the example's case, `Printer`). This is just a wrapper for an actor
-address to the actual structure, which is strictly internal and cannot be interacted with except by sending messages.
 
 For a more complex example, such as handling the actor's disconnection and taking `Context` in a handler, see the
 documentation or `complex.rs` in the examples directory. To see the generated code, run `cargo +nightly doc` in the 

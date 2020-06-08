@@ -5,7 +5,7 @@ pub use spaad_internal::*;
 
 #[doc(hidden)]
 pub mod export {
-    pub use xtra;
     #[cfg(feature = "stable")]
     pub use async_trait;
+    pub use xtra;
 }
