@@ -1,5 +1,3 @@
-#![cfg_attr(not(stable), feature(type_alias_impl_trait, generic_associated_types))]
-
 #[spaad::entangled]
 #[derive(Clone)]
 pub struct X<T: 'static + Send + Clone, A>
@@ -88,25 +86,14 @@ pub mod impl_somewhere_else {
     }
 
     #[spaad::entangled]
-    #[cfg_attr(stable, async_trait::async_trait)]
+    #[async_trait::async_trait]
     impl<T: 'static + Send + Clone, A> xtra::Handler<Notification> for super::X<T, A>
     where
         A: 'static + Send + Clone,
     {
-        #[cfg(stable)]
         async fn handle(&mut self, _: Notification, ctx: &mut xtra::Context<Self>) {
             println!("stopping");
             ctx.stop();
-        }
-
-        #[cfg(not(stable))]
-        type Responder<'a> = impl std::future::Future<Output = ()>;
-
-        #[cfg(not(stable))]
-        fn handle(&mut self, _: Notification, ctx: &mut xtra::Context<Self>) -> Self::Responder<'_> {
-            println!("stopping");
-            ctx.stop();
-            async {}
         }
     }
 }

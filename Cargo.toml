@@ -16,7 +16,7 @@ members = ["spaad_internal", "example_generated"]
 
 [dependencies]
 spaad_internal = { path = "spaad_internal" }
-xtra = { path = "../xtra", default-features = false }
+xtra = { git = "https://github.com/Restioson/xtra", default-features = false } # TODO 0.3
 async-trait = { version = "^0.1", optional = true }
 
 [features]
