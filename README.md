@@ -34,39 +34,40 @@ This macro is used as an attribute on the actor struct definition and its impl b
 
 ## Example 
 ```rust
-#![feature(type_alias_impl_trait, generic_associated_types)]
+use xtra::prelude::*;
 
 #[spaad::entangled]
-struct Printer {
+pub struct Printer {
     times: usize,
 }
 
 #[spaad::entangled]
-impl Actor for Printer {
-    fn started(&mut self, _ctx: &mut Context<Self>) {
-        println!("Actor started!");
-    }
-}
+impl Actor for Printer {}
 
 #[spaad::entangled]
 impl Printer {
-    // New is a special case: if it is present, create() and spawn() functions are emitted too
-    fn new() -> Self {
-        // You must use Self when referring to the type itself, as it is internally renamed something else. 
-        // This allows for better IDE support.
-        Self { times: 0 }
+    #[spaad::spawn]
+    pub fn new() -> Self {
+        Printer { times: 0 }
     }
 
-    async fn print(&mut self, string: String) {
+    #[spaad::handler]
+    pub fn print(&mut self, to_print: String) {
         self.times += 1;
-        println!("Printing {}. Printed {} times so far.", string, self.times);
+        println!(
+            "Printing {}. Printed {} times so far.",
+            to_print, self.times
+        );
     }
 }
 
 #[tokio::main]
-fn main() {
-    let printer: Printer = Printer::new(); // `new` spawns the actor onto the tokio runtime
-    printer.print().await;
+async fn main() {
+    let printer = Printer::new();
+
+    loop {
+        printer.print("hello".to_string()).await;
+    }
 }
 ```
 

@@ -27,12 +27,12 @@ impl Printer {
 
 #[tokio::main]
 async fn main() {
-    // it is mut because intellij wants it to be - it doesn't have to be.
+    // Declared mut because intellij wants it to be - it doesn't actually have to be mut.
     // It appears that rust-analyzer does not have this issue, for whatever reason.
     #[allow(unused_mut)]
-    let mut addr = Printer::new();
+    let mut printer = Printer::new();
 
     loop {
-        addr.print("hello".to_string()).await;
+        printer.print("hello".to_string()).await;
     }
 }
