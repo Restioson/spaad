@@ -16,7 +16,7 @@ members = ["spaad_internal", "example_generated"]
 
 [dependencies]
 spaad_internal = { path = "spaad_internal" }
-xtra = { path = "../xtra" }
+xtra = { path = "../xtra", default-features = false }
 async-trait = { version = "^0.1", optional = true }
 
 [features]

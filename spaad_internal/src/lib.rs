@@ -1,5 +1,4 @@
 #![cfg_attr(doc, allow(unused_braces))]
-#![feature(proc_macro_diagnostic)]
 
 extern crate proc_macro;
 
@@ -12,8 +11,7 @@ mod entangle;
 /// The main item of the crate. This is a proc macro used as an attribute on the actor struct
 /// definition, `Actor` implementation, and on an impl block in which the handler functions are used.
 ///
-/// For example:
-///
+/// ## Example
 /// ```rust,ignore
 /// #![feature(type_alias_impl_trait, generic_associated_types)]
 ///
@@ -31,13 +29,12 @@ mod entangle;
 ///
 /// #[spaad::entangled]
 /// impl Printer {
-///     // New is a special case: if it is present, create() and spawn() functions are emitted too
-///     fn new() -> Self {
-///         // You must use Self when referring to the type itself, as it is internally renamed
-///         // something else. This allows for better IDE support.
-///         Self { times: 0 }
+///     #[spaad::spawn]
+///     fn new() -> Printer {
+///         Printer { times: 0 }
 ///     }
 ///
+///     #[spaad::handler]
 ///     async fn print(&mut self, string: String) {
 ///         self.times += 1;
 ///         println!("Printing {}. Printed {} times so far.", string, self.times);
@@ -45,11 +42,25 @@ mod entangle;
 /// }
 /// ```
 ///
-/// It is important to note that the `new` function is a special case. If it is present, the proc
-/// macro will also emit a `create` method for the actor wrapper. It can take arguments. If the
-/// `with-tokio-0_2` or `with-async_std-1_0` features are enabled, then it will also emit a `spawn`
-/// method. These are both very similar to the `xtra::Actor` methods of the same names.
+/// ## Constructors
+/// To emit a constructor for an actor, the `#[spaad::spawn]` or `#[spaad::create]` attributes can
+/// be used. The `spawn` macro will emit a method that constructs the actor with the given arguments
+/// and spawns it onto whichever runtime `spaad` is set to use (currently, tokio, async_std, or
+/// wasm-bindgen at your option). It is analagous to `Actor::spawn`. Similarly, `create` will
+/// construct the actor, and return the address of the actor and its manager, ready to be spawned
+/// onto any runtime. You can even have both on one function with `rename`:
 ///
+/// ```rust,ignore
+/// #[spaad::spawn]
+/// #[spaad::create(rename = "create")]
+/// fn new(x: u32) -> MyActor {
+///     MyActor { x }
+/// }
+/// ```
+///
+/// This will cause a `create` function to be emitted, as well as a a spawn function named `new`.
+///
+/// ## Sending Messages
 /// Messages can then be sent to actors as such:
 /// ```rust,ignore
 /// my_actor.print().await;
@@ -66,23 +77,42 @@ mod entangle;
 /// This will also mean that the return type will be discarded, as the receiving end of the channel
 /// will be dropped.
 ///
-/// The proc macro will create the given struct (in the example's case, `Printer`). This is just a
-/// wrapper for an actor  address to the actual structure, which is strictly internal and cannot be
-/// interacted with except by sending messages. This is why `Self` must be used, and not the
-/// actual name of the actor struct. Currently, it is renamed to `__{Actor}`, but this is not stable
-/// and could change in the future.
-///
+/// ## Handling disconnection
 /// The methods to send messages will panic if the actor is disconnected. If you want to manually
 /// handle this error, make the return type of the handler function `Result<T, xtra::Disconnected>`.
 /// The type must be named `Context` - it cannot be renamed by re-importing. If you want to access
 /// the actor cotnext add an argument to the function with `&mut Context<Self>` as the type.
 /// Similarly, the type must be named `Context` - it cannot be renamed by re-importing.
+///
+/// ## Implementations in other modules
+/// To implement something on an actor in a module other than where it is declared, you will need
+/// to refer to it either by its fully-qualified path (e.g `crate::actor::MyActor`) or a local path
+/// (e.g `super::MyActor`) when writing the self-type. So, instead of writing this:
+///
+/// ```rust,ignore
+/// use super::MyActor;
+/// #[spaad::entangled]
+/// impl AsRef<i32> for MyActor { /* ... */ }
+/// ```
+///
+/// you must write this:
+///
+/// ```rust,ignore
+/// #[spaad::entangled]
+/// impl AsRef<i32> for super::MyActor { /* ... */ }
+/// ```
+///
+/// This is a limitation due to how the macro expands, and should be resolved when there is support
+/// for inherent-impl type aliases (see [rust/60471](https://github.com/rust-lang/rfcs/issues/1697)).
+/// This is currently blocked on lazy normalization.
+#[proc_macro_error::proc_macro_error]
 #[proc_macro_attribute]
 pub fn entangled(_args: TokenStream, input: TokenStream) -> TokenStream {
-    let x = entangle::entangle(input);
-    println!("{}", x);
-    x
+    entangle::entangle(input)
 }
+
+// The below attributes are just markers, so they just strip themselves from the output and output
+// the rest of the function.
 
 /// This marks a function as a handler for a type of message, exposing it to external callers.
 ///
@@ -99,19 +129,55 @@ pub fn handler(_args: TokenStream, input: TokenStream) -> TokenStream {
 }
 
 /// This marks a function as the method that should be used to create and spawn the actor. It must
-/// return the type of the actor, either as `Self` or by its name. However, do note that when using
-/// a struct initializer, **it must be referred to by `Self`.**
+/// return the type of the actor, either as `Self` or by its name.
+///
+/// ## Arguments
+///
+/// This macro can be passed what to rename the method in the form of `rename = "{new name}"`.
+/// This is most useful when generating both a create and spawn method from the same constructor.
 ///
 /// ## Usage
 ///
 /// ```ignore
 /// #[spaad::spawn]
-/// fn new(some: Thing) -> Self {
-///     Self { some }
+/// fn new(some: Thing) -> MyActor {
+///     MyActor { some }
 /// }
+///
+/// #[spaad::spawn(rename = "something_else")] // Emits a method called `something_else`
+///  fn spawn2(some: Thing) -> MyActor {
+///      MyActor { some }
+///  }
 /// ```
 #[proc_macro_attribute]
 pub fn spawn(_args: TokenStream, input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as ImplItemMethod);
+    TokenStream::from(quote!(#input))
+}
+
+/// This marks a function as the method that should be used to create the actor. It emits a method
+/// which returns a tuple of the address to the actor and its `ActorManager`.
+///
+/// ## Arguments
+///
+/// This macro can be passed what to rename the method in the form of `rename = "{new name}"`.
+/// This is most useful when generating both a create and spawn method from the same constructor.
+///
+/// ## Usage
+///
+/// ```ignore
+/// #[spaad::create]
+/// fn create(some: Thing) -> MyActor {
+///     MyActor { some }
+/// }
+///
+/// #[spaad::create(rename = "something_else")] // Emits a method called `something_else`
+/// fn create2(some: Thing) -> MyActor {
+///     MyActor { some }
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn create(_args: TokenStream, input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as ImplItemMethod);
     TokenStream::from(quote!(#input))
 }

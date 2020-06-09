@@ -12,6 +12,7 @@ quote = "^1"
 syn = { version = "^1", features = ["full", "extra-traits"] }
 proc-macro2 = "^1"
 async-trait = "0.1"
+proc-macro-error = "^1"
 
 [features]
 stable = []

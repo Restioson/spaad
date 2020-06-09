@@ -1,9 +1,11 @@
-use crate::entangle::{get_actor_name, get_name, get_name_from_ty, set_visibility_min_pub_super};
+use crate::entangle::{get_actor_name, get_name, ty_is_name};
+use proc_macro_error::abort;
 use quote::{format_ident, quote};
 use std::ops::Deref;
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::*;
+use proc_macro2::TokenStream;
 
 fn is_attr(name: &str, attr: &Attribute) -> bool {
     let mut iter = attr.path.segments.iter();
@@ -18,46 +20,63 @@ fn get_attr<'a>(name: &str, attrs: &'a [Attribute]) -> Option<&'a Attribute> {
     attrs.iter().find(|attr| is_attr(name, attr))
 }
 
+fn is_context_ref(ty_ref: &TypeReference, is_handler: bool) -> bool {
+    let is_static = ty_ref
+        .lifetime
+        .as_ref()
+        .map(|lif| lif.ident == "static")
+        .unwrap_or(false);
+    let is_context = ty_is_name(&ty_ref.elem, "Context");
+    if !is_context && !is_static && is_handler {
+        abort!(ty_ref, "must be 'static or a reference to `Context<Self>`")
+    }
+
+    is_context
+}
+
 // I know, I apologize.
-pub fn transform_method(impl_block: &ItemImpl, mut method: ImplItemMethod) -> proc_macro2::TokenStream {
+pub fn transform_method(impl_block: &ItemImpl, method: ImplItemMethod) -> proc_macro2::TokenStream {
     let name = get_name(&impl_block);
     let actor_name = get_actor_name(&impl_block);
+    let act_ty_generics = impl_block.generics.split_for_impl().1;
 
     let has_attr = |name| find_attr(name, &method.attrs).is_some();
-    let (has_create, has_spawn) = (has_attr("create"), has_attr("spawn"));
-    let should_transform = has_attr("handler") | has_create | has_spawn;
+    let is_handler = has_attr("handler");
 
-    set_visibility_min_pub_super(&mut method.vis);
+    if !has_attr("handler") {
+        // matches checks for no receiver, i.e a static method
+        if matches!(method.sig.inputs.first(), Some(FnArg::Typed(_)) | None) {
+            return transform_static_methods(
+                name,
+                actor_name,
+                has_attr("create"),
+                has_attr("spawn"),
+                method,
+                act_ty_generics,
+            );
+        } else {
+            return quote!();
+        }
+    }
 
     let ImplItemMethod {
         attrs,
         vis,
         mut sig,
         ..
-    } = method.clone();
-
-    if !should_transform {
-        return quote!();
-    }
-
-    // matches checks for no receiver, i.e a static method
-    if matches!(sig.inputs.first(), Some(FnArg::Typed(_)) | None) {
-        return transform_static_methods(name, actor_name, method, has_create, has_spawn);
-    }
+    } = method;
 
     match sig.inputs.first_mut() {
         Some(FnArg::Typed(_)) | None => {
-            sig.span()
-                .unwrap()
-                .error("handlers in `spaad::entangled` impl blocks must take `self`")
-                .emit();
+            abort!(
+                sig,
+                "handlers in `spaad::entangled` impl blocks must take `self`"
+            );
         }
         Some(FnArg::Receiver(recv)) => {
             recv.mutability = None;
         }
     }
-
-    let (impl_generics, ty_generics, where_clause) = impl_block.generics.split_for_impl();
 
     let call_inputs = sig
         .inputs
@@ -72,9 +91,10 @@ pub fn transform_method(impl_block: &ItemImpl, mut method: ImplItemMethod) -> pr
                 }
 
                 if !matches!(*pat_type.pat, Pat::Type(_) | Pat::Ident(_)) {
-                    span.unwrap()
-                        .error("`spaad::entangle` only support simple patterns (e.g `mut f: f64`)")
-                        .emit();
+                    abort!(
+                        span,
+                        "`spaad::entangle` only support simple patterns (e.g `mut f: f64`)"
+                    )
                 }
 
                 return pat_type;
@@ -83,15 +103,7 @@ pub fn transform_method(impl_block: &ItemImpl, mut method: ImplItemMethod) -> pr
         })
         .filter(|PatType { ty, .. }| {
             if let Type::Reference(ty_ref) = &**ty {
-                if get_name_from_ty(&ty_ref.elem).to_string() != "Context" {
-                    ty_ref
-                        .span()
-                        .unwrap()
-                        .warning("cannot take by reference in a `spaad::entangle` handler")
-                        .emit();
-                } else {
-                    return false;
-                }
+                return !is_context_ref(ty_ref, is_handler);
             }
 
             true
@@ -108,11 +120,18 @@ pub fn transform_method(impl_block: &ItemImpl, mut method: ImplItemMethod) -> pr
             quote!(()),
             quote!(()),
         ),
-        None => (
-            quote! { .expect("actor disconnected") },
-            quote!(()),
-            quote!(#output),
-        ),
+        None => {
+            let output = match output {
+                ReturnType::Type(_, ty) => ty,
+                _ => unreachable!(),
+            };
+
+            (
+                quote! { .expect("actor disconnected") },
+                quote!(()),
+                quote!(#output),
+            )
+        },
     };
     let fn_name = &sig.ident;
     let mut ctx_idx: Option<usize> = None;
@@ -124,13 +143,7 @@ pub fn transform_method(impl_block: &ItemImpl, mut method: ImplItemMethod) -> pr
         .filter(|(i, arg)| match arg {
             FnArg::Typed(PatType { ty, .. }) => {
                 if let Type::Reference(ty_ref) = &**ty {
-                    if get_name_from_ty(&ty_ref.elem).to_string() != "Context" {
-                        ty_ref
-                            .span()
-                            .unwrap()
-                            .warning("cannot take by reference in a `spaad::entangle` handler")
-                            .emit();
-                    } else {
+                    if is_context_ref(ty_ref, is_handler) {
                         ctx_idx = Some(*i);
                         return false;
                     }
@@ -158,60 +171,103 @@ pub fn transform_method(impl_block: &ItemImpl, mut method: ImplItemMethod) -> pr
         call_inputs.insert(ctx_idx - 1, quote!(ctx))
     }
 
-    #[cfg(feature = "stable")]
-    let dot_await = if sig.asyncness.is_some() {
-        quote!(.await)
+    let (fn_impl_generics, fn_ty_generics, fn_where) = sig.generics.split_for_impl();
+    let fn_turbo = fn_ty_generics.as_turbofish();
+
+    let mut handler_generics: Generics = impl_block.generics.clone();
+    for generic in sig.generics.params.clone() {
+        handler_generics.params.push(generic);
+    }
+
+    let (handler_impl_generics, _, handler_where) = handler_generics.split_for_impl();
+
+    let handler = if sig.asyncness.is_some() {
+        #[cfg(feature = "stable")]
+        let handle = quote! {
+            async fn handle(
+                &mut self,
+                m: Msg#fn_ty_generics,
+                ctx: &mut ::spaad::export::xtra::Context<Self>,
+            ) -> #result {
+                let Msg { #(#msg_members_destructured)* } = m;
+                self.#fn_name#fn_turbo(#(#call_inputs),*).await
+            }
+        };
+        #[cfg(not(feature = "stable"))]
+        let handle = quote! {
+            fn handle<'a>(
+                &'a mut self,
+                m: Msg#fn_ty_generics,
+                ctx: &'a mut ::spaad::export::xtra::Context<Self>,
+            ) -> Self::Responder<'a> {
+                let Msg { #(#msg_members_destructured)* } = m;
+                self.#fn_name#fn_turbo(#(#call_inputs),*)
+            }
+        };
+
+        #[cfg(not(feature = "stable"))]
+        let responder = quote! {
+            type Responder<'a> = impl std::future::Future<Output = #result> + 'a;
+        };
+        #[cfg(feature = "stable")]
+        let responder = quote!();
+
+        #[cfg(not(feature = "stable"))]
+        let async_trait = quote!();
+        #[cfg(feature = "stable")]
+        let async_trait = quote!(#[::spaad::export::async_trait::async_trait]);
+
+        quote! {
+            #async_trait
+            #[allow(unused_variables)]
+            impl#handler_impl_generics
+                ::spaad::export::xtra::Handler<Msg#fn_ty_generics>
+            for #actor_name#act_ty_generics
+                 #handler_where
+            {
+                #responder #handle
+            }
+        }
     } else {
-        quote!()
-    };
-
-    #[cfg(feature = "stable")]
-    let handle = quote! {
-        async fn handle(&mut self, m: Msg, ctx: &mut Context<Self>) -> #result {
-            let Msg { #(#msg_members_destructured)* } = m;
-            self.#fn_name(#(#call_inputs),*)#dot_await
+        quote! {
+            #[allow(unused_variables)]
+            impl#handler_impl_generics
+                ::spaad::export::xtra::SyncHandler<Msg#fn_ty_generics>
+            for #actor_name#act_ty_generics
+                 #handler_where
+            {
+                fn handle(
+                    &mut self,
+                    m: Msg#fn_ty_generics,
+                    ctx: &mut ::spaad::export::xtra::Context<Self>
+                ) -> #result {
+                    let Msg { #(#msg_members_destructured)* } = m;
+                    self.#fn_name#fn_turbo(#(#call_inputs),*)
+                }
+            }
         }
     };
-    #[cfg(not(feature = "stable"))]
-    let handle = quote! {
-        fn handle<'a>(&'a mut self, m: Msg, ctx: &'a mut Context<Self>) -> Self::Responder<'a> {
-            let Msg { #(#msg_members_destructured)* } = m;
-            self.#fn_name(#(#call_inputs),*)
-        }
-    };
-
-    #[cfg(not(feature = "stable"))]
-    let responder = quote! {
-        type Responder<'a> = impl std::future::Future<Output = #result> + 'a;
-    };
-    #[cfg(feature = "stable")]
-    let responder = quote!();
-
-    #[cfg(not(feature = "stable"))]
-    let async_trait = quote!();
-    #[cfg(feature = "stable")]
-    let async_trait = quote!(#[::spaad::export::async_trait::async_trait]);
 
     quote! {
         #[allow(unused_mut)]
-        #(#attrs)* #vis fn #fn_name(
+        #(#attrs)* #vis fn #fn_name#fn_impl_generics(
             #(#fn_decl_inputs),*
-        ) -> impl std::future::Future<Output = #output>  {
+        ) -> impl std::future::Future<Output = #output>
+            #fn_where
+        {
             use ::spaad::export::xtra::prelude::*;
 
-            struct Msg { #(#msg_members)* };
+            struct Msg#fn_impl_generics #fn_where { #(#msg_members)* };
 
-            impl ::spaad::export::xtra::Message for Msg {
+            impl#fn_impl_generics ::spaad::export::xtra::Message for Msg#fn_ty_generics
+                #fn_where
+            {
                 type Result = #result;
             }
 
-            #async_trait
-            #[allow(unused_variables)]
-            impl#impl_generics Handler<Msg> for #actor_name#ty_generics #where_clause {
-                #responder #handle
-            }
+            #handler
 
-            let f = self.addr.send(Msg{ #(#msg_members_destructured)* });
+            let f = self.addr.send(Msg#fn_turbo { #(#msg_members_destructured)* });
             async { f.await#handle_result }
         }
     }
@@ -219,15 +275,13 @@ pub fn transform_method(impl_block: &ItemImpl, mut method: ImplItemMethod) -> pr
 
 fn transform_ret(r: &ReturnType) -> Option<proc_macro2::TokenStream> {
     if let ReturnType::Type(_, ret_ty) = r {
-        let name = get_name_from_ty(ret_ty);
-
-        if name == "Result" {
+        if ty_is_name(ret_ty, "Result") {
             if let Type::Path(ty_path) = ret_ty.deref() {
                 let arg = &ty_path.path.segments.last().unwrap().arguments;
                 if let PathArguments::AngleBracketed(generics) = arg {
                     let last = generics.args.last().unwrap();
                     if let GenericArgument::Type(ty) = last {
-                        if get_name_from_ty(ty) == "Disconnected" {
+                        if ty_is_name(ty, "Disconnected") {
                             return Some(quote!(#ret_ty));
                         }
                     }
@@ -242,9 +296,10 @@ fn transform_ret(r: &ReturnType) -> Option<proc_macro2::TokenStream> {
 fn transform_static_methods(
     name: &Ident,
     actor_name: proc_macro2::TokenStream,
-    method: ImplItemMethod,
     has_create: bool,
     has_spawn: bool,
+    method: ImplItemMethod,
+    impl_ty_generics: TypeGenerics,
 ) -> proc_macro2::TokenStream {
     let sig = &method.sig;
     let arg_inputs = &sig.inputs;
@@ -258,14 +313,24 @@ fn transform_static_methods(
         .collect();
 
     if has_create || has_spawn {
-        transform_constructors(name, actor_name, method.clone(), arg_inputs, inputs)
+        transform_constructors(
+            name,
+            actor_name,
+            method.clone(),
+            impl_ty_generics,
+            arg_inputs,
+            inputs,
+        )
     } else {
         let fn_name = &sig.ident;
+        let method_ty_generics = sig.generics.split_for_impl().1;
+        let method_turbo = method_ty_generics.as_turbofish();
+        let act_turbo = impl_ty_generics.as_turbofish();
         let ImplItemMethod { attrs, vis, .. } = method;
-        let ty_generics = sig.generics.split_for_impl().1;
+
         quote! {
             #(#attrs)* #vis #sig {
-                #actor_name::#ty_generics::#fn_name(#(#inputs),*)
+                #actor_name#act_turbo::#fn_name#method_turbo(#(#inputs),*)
             }
         }
     }
@@ -275,39 +340,43 @@ fn transform_constructors<'a>(
     name: &Ident,
     actor_name: proc_macro2::TokenStream,
     method: ImplItemMethod,
+    act_ty_generics: TypeGenerics,
     arg_inputs: &Punctuated<FnArg, Token![,]>,
     inputs: Vec<&Box<Pat>>,
 ) -> proc_macro2::TokenStream {
     let ImplItemMethod {
         attrs, vis, sig, ..
-    } = method.clone();
-    let get = |ty| get_name_from_ty(ty);
+    } = method;
+    let is_name = |ty, name| ty_is_name(ty, name);
 
     if matches!(
         &sig.output,
-        ReturnType::Type(_, ty) if !(get(&ty) == name || (*get(&ty) == format_ident!("Self"))))
-    {
-        sig.output
-            .span()
-            .unwrap()
-            .error("functions annotated with `spawn` or `create` must return `Self`")
-            .emit();
+        ReturnType::Type(_, ty) if !(is_name(ty, &name.to_string()) || is_name(ty, "Self"))
+    ) {
+        abort!(
+            sig.output,
+            "functions annotated with `spawn` or `create` must return `Self`"
+        );
     }
 
-    let ty_generics = method.sig.generics.split_for_impl().1;
-    let turbo = ty_generics.as_turbofish();
+    let (impl_generics, ty_generics, where_clause) = sig.generics.split_for_impl();
+    let act_turbo = act_ty_generics.as_turbofish();
+    let fn_turbo = ty_generics.as_turbofish();
+    let act_fn_name = &sig.ident;
 
-    let mut spawn = None;
+    #[allow(unused_mut)]
+    let mut spawn: Option<TokenStream> = None;
+    #[allow(unused_variables)]
     if let Some(attr) = get_attr("spawn", &attrs) {
         #[cfg(any(feature = "with-tokio-0_2", feature = "with-async_std-1"))]
         {
-            let fn_name = get_ctor_name(&method.sig, attr);
+            let fn_name = get_ctor_name(&sig, attr);
             spawn = Some(quote! {
-                #(#attrs)* #vis fn #fn_name(#arg_inputs) -> Self {
+                #(#attrs)* #vis fn #fn_name#impl_generics(#arg_inputs) -> Self #where_clause {
                     use ::spaad::export::xtra::prelude::*;
-                    let act = #actor_name#turbo::new(#(#inputs),*);
+                    let act = #actor_name#act_turbo::#act_fn_name#fn_turbo(#(#inputs),*);
                     let addr = act.spawn();
-                    super::#name { addr }
+                    #name { addr }
                 }
             });
         }
@@ -315,15 +384,17 @@ fn transform_constructors<'a>(
 
     let mut create = None;
     if let Some(attr) = get_attr("create", &attrs) {
-        let fn_name = get_ctor_name(&method.sig, attr);
+        let fn_name = get_ctor_name(&sig, attr);
         create = Some(quote! {
-            #(#attrs)* #vis fn #fn_name(
+            #(#attrs)* #vis fn #fn_name#impl_generics(
                 #arg_inputs
-            ) -> (Self, ::spaad::export::xtra::ActorManager<#actor_name#ty_generics>) {
+            ) -> (Self, ::spaad::export::xtra::ActorManager<#actor_name#act_ty_generics>)
+                #where_clause
+            {
                 use ::spaad::export::xtra::prelude::*;
-                let act = #actor_name#turbo::new(#(#inputs),*);
+                let act = #actor_name#act_turbo::#act_fn_name#fn_turbo(#(#inputs),*);
                 let (addr, mgr) = act.create();
-                (super::#name { addr }, mgr)
+                (#name { addr }, mgr)
             }
         })
     };
@@ -335,15 +406,17 @@ fn get_ctor_name(sig: &Signature, attr: &Attribute) -> Ident {
     let fn_name = sig.ident.clone();
     // thx to serde for this fn
     match attr.parse_meta() {
-        Ok(Meta::NameValue(m)) if m.path.is_ident("rename") => match m.lit {
-            Lit::Str(lit) => format_ident!("{}", lit.value()),
-            _ => {
-                attr.span()
-                    .unwrap()
-                    .error("Expected rename target to be a string")
-                    .emit();
-                unreachable!()
+        Ok(Meta::List(MetaList { nested, .. })) => match nested.first().unwrap() {
+            NestedMeta::Meta(Meta::NameValue(name)) if name.path.is_ident("rename") => {
+                match &name.lit {
+                    Lit::Str(lit) => format_ident!("{}", lit.value()),
+                    _ => abort!(attr, "Expected rename target to be a string"),
+                }
             }
+            _ => abort!(
+                attr,
+                "Only one valid argument here: `rename = \"{target}\"`"
+            ),
         },
         _ => fn_name,
     }

@@ -1,7 +1,7 @@
 use crate::entangle::transform::transform_method;
 use proc_macro::TokenStream;
+use proc_macro_error::{abort, emit_warning};
 use quote::{format_ident, quote};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use syn::parse::{Parse, ParseStream};
 use syn::parse_macro_input;
 use syn::punctuated::Punctuated;
@@ -9,8 +9,6 @@ use syn::spanned::Spanned;
 use syn::*;
 
 mod transform;
-
-static IMPL_BLOCK_NUM: AtomicUsize = AtomicUsize::new(0);
 
 enum EntangledItem {
     Struct(ItemStruct),
@@ -52,23 +50,17 @@ fn set_visibility_min_pub_super(vis: &mut Visibility) {
         &vis,
         Visibility::Restricted(res) if res.path.segments.first().unwrap().ident != "self"
     ) {
-        vis.span()
-            .unwrap()
-            .warning(
-                "This visibility is not supported due to macro expansion and will be converted \
-                to `pub(super)`"
-            )
-            .emit();
+        emit_warning!(
+            vis,
+            "This visibility is not supported due to macro expansion and will be converted to \
+             `pub(super)`"
+        );
     }
 
     if matches!(vis,  Visibility::Inherited | Visibility::Restricted(_)) {
         *vis = Visibility::Restricted(VisRestricted {
-            pub_token: syn::token::Pub {
-                span: vis.span(),
-            },
-            paren_token: syn::token::Paren {
-                span: vis.span(),
-            },
+            pub_token: syn::token::Pub { span: vis.span() },
+            paren_token: syn::token::Paren { span: vis.span() },
             in_token: None,
             path: Box::new(Path {
                 leading_colon: None,
@@ -96,9 +88,14 @@ fn entangle_struct(struct_def: ItemStruct) -> proc_macro2::TokenStream {
     }
 
     quote! {
-        #[derive(Clone)]
         #vis struct #ident#impl_generics #where_clause {
             addr: ::spaad::export::xtra::Address<#actor_mod::#ident#ty_generics>,
+        }
+
+        impl#impl_generics Clone for #ident#ty_generics #where_clause {
+            fn clone(&self) -> Self {
+                Self { addr: self.addr.clone() }
+            }
         }
 
         impl#impl_generics #ident#ty_generics #where_clause {
@@ -126,11 +123,10 @@ fn entangle_struct(struct_def: ItemStruct) -> proc_macro2::TokenStream {
 
 fn entangle_impl(impl_block: ItemImpl) -> proc_macro2::TokenStream {
     if !matches!(*impl_block.self_ty, Type::Path(_)) {
-        impl_block
-            .span()
-            .unwrap()
-            .error("`spaad::entangle` can only be called on impls of an actor struct")
-            .emit()
+        abort!(
+            impl_block,
+            "`spaad::entangle` can only be called on impls of an actor struct"
+        );
     }
 
     match &impl_block.trait_ {
@@ -143,35 +139,24 @@ fn get_name_from_path(p: &Path) -> &proc_macro2::Ident {
     &p.segments.last().unwrap().ident
 }
 
-fn get_name_from_ty(ty: &syn::Type) -> &proc_macro2::Ident {
-    let ty_path = match &*ty {
-        Type::Path(path) => &path.path,
-        _ => {
-            ty.span()
-                .unwrap()
-                .error(
-                    "the return type of a `spaad::entangled` handler must be\
-                    `Result<T, xtra::Disconnected>`",
-                )
-                .emit();
-            unreachable!()
-        }
-    };
-    get_name_from_path(ty_path)
+fn get_name_from_ty(ty: &syn::Type) -> Option<&proc_macro2::Ident> {
+    match &*ty {
+        Type::Path(path) => Some(get_name_from_path(&path.path)),
+        _ => None
+    }
+}
+
+fn ty_is_name(ty: &syn::Type, name: &str) -> bool {
+    get_name_from_ty(ty).map(|id| id == name).unwrap_or(false)
 }
 
 fn get_name(block: &ItemImpl) -> &proc_macro2::Ident {
     let self_ty_path = match &*block.self_ty {
         Type::Path(path) => &path.path,
-        _ => {
-            block
-                .self_ty
-                .span()
-                .unwrap()
-                .error("the self type of a `spaad::entangled` impl must be a struct")
-                .emit();
-            unreachable!()
-        }
+        _ => abort!(
+            block.self_ty,
+            "the self type of a `spaad::entangled` impl must be a struct"
+        ),
     };
     get_name_from_path(self_ty_path)
 }
@@ -206,34 +191,20 @@ fn entangle_handlers_impl(mut handlers_impl: ItemImpl) -> proc_macro2::TokenStre
     let actor = handlers_impl.self_ty.clone();
 
     let (impl_generics, _, where_clause) = handlers_impl.generics.split_for_impl();
-    let mut actor_items = handlers_impl.items.clone();
+    let actor_items = handlers_impl.items.clone();
     let transformed_items = transform_items(&old_impl, handlers_impl.items.iter());
 
-    let impl_num = format_ident!("__impl{}", IMPL_BLOCK_NUM.fetch_add(1, Ordering::SeqCst));
-
-    for item in actor_items.iter_mut() {
-        let vis = match item {
-            ImplItem::Const(const_) => &mut const_.vis,
-            ImplItem::Method(meth) => &mut meth.vis,
-            ImplItem::Type(typ) =>  &mut typ.vis,
-            _ => continue,
-        };
-        set_visibility_min_pub_super(vis);
-    }
-
     quote! {
-        mod #impl_num {
-            use super::*;
-            use #actor_path;
+        impl#impl_generics #wrapper #where_clause {
+            #(#transformed_items)*
+        }
 
+        const _: () = {
+            use #actor_path;
             impl#impl_generics #actor #where_clause {
                 #(#actor_items)*
             }
-
-            impl#impl_generics super::#wrapper #where_clause {
-                #(#transformed_items)*
-            }
-        }
+        };
     }
 }
 
