@@ -1,8 +1,14 @@
 [package]
 name = "spaad_internal"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Restioson <restiosondev@gmail.com>"]
 edition = "2018"
+license = "MPL-2.0"
+repository = "https://github.com/Restioson/spaad"
+documentation = "https://docs.rs/spaad_internal"
+description = "Proc-macro for the `spaad` crate. Do not use this directly, use that instead."
+keywords = ["async", "actor", "futures", "async-await", "xtra"]
+categories = ["asynchronous", "concurrency"]
 
 [lib]
 proc-macro = true

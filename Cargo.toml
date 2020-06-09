@@ -15,7 +15,7 @@ categories = ["asynchronous", "concurrency"]
 members = ["spaad_internal", "example_generated"]
 
 [dependencies]
-spaad_internal = { path = "spaad_internal" }
+spaad_internal = "0.2"
 xtra = { git = "https://github.com/Restioson/xtra", default-features = false } # TODO 0.3
 async-trait = { version = "^0.1", optional = true }
 
