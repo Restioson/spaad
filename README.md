@@ -21,9 +21,6 @@ my_actor.print().await;
 
 ## Usage
 
-Since spaad uses nightly features such as GATs and Type Alias Impl Trait, those features will need to be enabled. These
-are the same features generally required for xtra.
-
 The proc macro `spaad::entangled` is the core item of spaad. It creates the messages and `Handler` implementations for
 each handler from its signature, as well as a struct wrapping the address, which has ergonomic function names for sending messages.
 The end result is that it looks as though no actors are involved to both the caller and callee. The name of the crate is
