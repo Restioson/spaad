@@ -99,18 +99,28 @@ fn entangle_struct(struct_def: ItemStruct) -> proc_macro2::TokenStream {
         }
 
         impl#impl_generics #ident#ty_generics #where_clause {
-            #vis fn into_address(
-                self
-            ) -> ::spaad::export::xtra::Address<#actor_mod::#ident#ty_generics> {
-                self.addr
-            }
-
             #vis fn address(
                 &self
             ) -> &::spaad::export::xtra::Address<#actor_mod::#ident#ty_generics> {
                 &self.addr
             }
         }
+
+        impl#impl_generics Into<::spaad::export::xtra::Address<#actor_mod::#ident#ty_generics>>
+            for #ident#ty_generics
+        #where_clause {
+           fn into(self) -> ::spaad::export::xtra::Address<#actor_mod::#ident#ty_generics> {
+                self.addr
+           }
+        }
+
+         impl#impl_generics From<::spaad::export::xtra::Address<#actor_mod::#ident#ty_generics>>
+            for #ident#ty_generics
+         #where_clause {
+            fn from(addr: ::spaad::export::xtra::Address<#actor_mod::#ident#ty_generics>) -> Self {
+                Self { addr }
+            }
+         }
 
         #[doc(hidden)]
         #[allow(non_snake_case)]

@@ -182,7 +182,7 @@ pub fn transform_method(impl_block: &ItemImpl, method: ImplItemMethod) -> proc_m
     let (handler_impl_generics, _, handler_where) = handler_generics.split_for_impl();
 
     let handler = if sig.asyncness.is_some() {
-        #[cfg(feature = "stable")]
+        #[cfg(not(feature = "nightly"))]
         let handle = quote! {
             async fn handle(
                 &mut self,
@@ -193,7 +193,7 @@ pub fn transform_method(impl_block: &ItemImpl, method: ImplItemMethod) -> proc_m
                 self.#fn_name#fn_turbo(#(#call_inputs),*).await
             }
         };
-        #[cfg(not(feature = "stable"))]
+        #[cfg(feature = "nightly")]
         let handle = quote! {
             fn handle<'a>(
                 &'a mut self,
@@ -205,16 +205,16 @@ pub fn transform_method(impl_block: &ItemImpl, method: ImplItemMethod) -> proc_m
             }
         };
 
-        #[cfg(not(feature = "stable"))]
+        #[cfg(feature = "nightly")]
         let responder = quote! {
             type Responder<'a> = impl std::future::Future<Output = #result> + 'a;
         };
-        #[cfg(feature = "stable")]
+        #[cfg(not(feature = "nightly"))]
         let responder = quote!();
 
-        #[cfg(not(feature = "stable"))]
+        #[cfg(feature = "nightly")]
         let async_trait = quote!();
-        #[cfg(feature = "stable")]
+        #[cfg(not(feature = "nightly"))]
         let async_trait = quote!(#[::spaad::export::async_trait::async_trait]);
 
         quote! {

@@ -1,6 +1,6 @@
 [package]
 name = "spaad"
-version = "0.2.1"
+version = "0.3.0"
 authors = ["Restioson <restiosondev@gmail.com>"]
 edition = "2018"
 license = "MPL-2.0"
@@ -12,13 +12,12 @@ keywords = ["async", "actor", "futures", "async-await", "xtra"]
 categories = ["asynchronous", "concurrency"]
 
 [dependencies]
-spaad_internal = "0.2"
-xtra = { version = "^0.3", default-features = false }
-async-trait = { version = "^0.1", optional = true }
+spaad_internal = { path = "../spaad_internal" }
+xtra = { version = "^0.4", default-features = false }
+async-trait = { version = "^0.1" }
 
 [features]
-default = ["stable"]
-stable = ["async-trait", "xtra/stable", "spaad_internal/stable"]
+nightly = ["xtra/nightly", "spaad_internal/nightly"]
 with-tokio-0_2 = ["xtra/with-tokio-0_2", "spaad_internal/with-tokio-0_2"]
 with-async_std-1 = ["xtra/with-async_std-1", "spaad_internal/with-async_std-1"]
 
