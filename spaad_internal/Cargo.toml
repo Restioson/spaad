@@ -1,6 +1,6 @@
 [package]
 name = "spaad_internal"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Restioson <restiosondev@gmail.com>"]
 edition = "2018"
 license = "MPL-2.0"
@@ -15,7 +15,7 @@ proc-macro = true
 
 [dependencies]
 quote = "^1"
-syn = { version = "^1", features = ["full", "extra-traits"] }
+syn = { version = "^1.0.30", features = ["full", "extra-traits"] }
 proc-macro2 = "^1"
 async-trait = "0.1"
 proc-macro-error = "^1"

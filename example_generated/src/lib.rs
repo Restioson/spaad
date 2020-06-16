@@ -2,9 +2,9 @@
 //! API stability is not guaranteed whatsoever for this module.
 
 pub mod simple {
-    include!("../../examples/basic.rs");
+    include!("../../spaad/examples/basic.rs");
 }
 
 pub mod complex {
-    include!("../../examples/complex.rs");
+    include!("../../spaad/examples/complex.rs");
 }
