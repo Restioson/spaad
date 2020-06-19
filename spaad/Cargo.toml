@@ -20,6 +20,7 @@ async-trait = { version = "^0.1" }
 nightly = ["xtra/nightly", "spaad_internal/nightly"]
 with-tokio-0_2 = ["xtra/with-tokio-0_2", "spaad_internal/with-tokio-0_2"]
 with-async_std-1 = ["xtra/with-async_std-1", "spaad_internal/with-async_std-1"]
+with-smol-0_1 = ["xtra/with-smol-0_1", "spaad_internal/with-smol-0_1"]
 
 [dev-dependencies]
 tokio = { version = "^0.2", features = ["full"] }

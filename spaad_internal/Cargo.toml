@@ -1,6 +1,6 @@
 [package]
 name = "spaad_internal"
-version = "0.3.1"
+version = "0.3.2"
 authors = ["Restioson <restiosondev@gmail.com>"]
 edition = "2018"
 license = "MPL-2.0"
@@ -24,3 +24,4 @@ proc-macro-error = "^1"
 nightly = []
 with-tokio-0_2 = []
 with-async_std-1 = []
+with-smol-0_1 = []

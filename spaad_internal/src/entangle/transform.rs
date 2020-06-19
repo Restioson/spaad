@@ -179,6 +179,15 @@ pub fn transform_method(impl_block: &ItemImpl, method: ImplItemMethod) -> proc_m
         handler_generics.params.push(generic);
     }
 
+    handler_generics.make_where_clause();
+
+    if let Some(sig_clause) = sig.generics.where_clause.clone() {
+        let handler_clause = handler_generics.where_clause.as_mut().unwrap();
+        for where_clause in sig_clause.predicates {
+            handler_clause.predicates.push(where_clause);
+        }
+    }
+
     let (handler_impl_generics, _, handler_where) = handler_generics.split_for_impl();
 
     let handler = if sig.asyncness.is_some() {
@@ -368,7 +377,11 @@ fn transform_constructors<'a>(
     let mut spawn: Option<TokenStream> = None;
     #[allow(unused_variables)]
     if let Some(attr) = get_attr("spawn", &attrs) {
-        #[cfg(any(feature = "with-tokio-0_2", feature = "with-async_std-1"))]
+        #[cfg(any(
+            feature = "with-tokio-0_2",
+            feature = "with-async_std-1",
+            feature = "with-smol-0_1"
+        ))]
         {
             let fn_name = get_ctor_name(&sig, attr);
             spawn = Some(quote! {

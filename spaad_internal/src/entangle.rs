@@ -104,6 +104,12 @@ fn entangle_struct(struct_def: ItemStruct) -> proc_macro2::TokenStream {
             ) -> &::spaad::export::xtra::Address<#actor_mod::#ident#ty_generics> {
                 &self.addr
             }
+
+            #vis fn into_address(
+                self
+            ) -> ::spaad::export::xtra::Address<#actor_mod::#ident#ty_generics> {
+                self.addr
+            }
         }
 
         impl#impl_generics Into<::spaad::export::xtra::Address<#actor_mod::#ident#ty_generics>>
@@ -125,6 +131,8 @@ fn entangle_struct(struct_def: ItemStruct) -> proc_macro2::TokenStream {
         #[doc(hidden)]
         #[allow(non_snake_case)]
         #vis mod #actor_mod {
+            use super::*;
+
             #(#attrs)*
             pub struct #ident#impl_generics #where_clause #fields #semi_token
         }
@@ -172,9 +180,22 @@ fn get_name(block: &ItemImpl) -> &proc_macro2::Ident {
 }
 
 fn get_actor_name(block: &ItemImpl) -> proc_macro2::TokenStream {
+    let self_ty_path = match &*block.self_ty {
+        Type::Path(path) => &path.path,
+        _ => abort!(
+            block.self_ty,
+            "the self type of a `spaad::entangled` impl must be a struct"
+        ),
+    };
+    let mut path = self_ty_path.clone();
     let name = get_name(block);
     let mod_name = format_ident!("__{}Actor", name);
-    quote!(#mod_name::#name)
+
+    let _ = path.segments.pop();
+    path.segments.push(PathSegment { ident: mod_name.clone(), arguments: PathArguments::None });
+    path.segments.push(PathSegment { ident: name.clone(), arguments: PathArguments::None });
+
+    quote!(#path)
 }
 
 fn entangle_handlers_impl(mut handlers_impl: ItemImpl) -> proc_macro2::TokenStream {
@@ -203,14 +224,15 @@ fn entangle_handlers_impl(mut handlers_impl: ItemImpl) -> proc_macro2::TokenStre
     let (impl_generics, _, where_clause) = handlers_impl.generics.split_for_impl();
     let actor_items = handlers_impl.items.clone();
     let transformed_items = transform_items(&old_impl, handlers_impl.items.iter());
-
     quote! {
         impl#impl_generics #wrapper #where_clause {
             #(#transformed_items)*
         }
 
         const _: () = {
+            #[allow(unused_imports)]
             use #actor_path;
+
             impl#impl_generics #actor #where_clause {
                 #(#actor_items)*
             }
