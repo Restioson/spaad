@@ -1,11 +1,11 @@
 use crate::entangle::{get_actor_name, get_name, ty_is_name};
+use proc_macro2::TokenStream;
 use proc_macro_error::abort;
 use quote::{format_ident, quote};
 use std::ops::Deref;
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::*;
-use proc_macro2::TokenStream;
 
 fn is_attr(name: &str, attr: &Attribute) -> bool {
     let mut iter = attr.path.segments.iter();
@@ -128,10 +128,10 @@ pub fn transform_method(impl_block: &ItemImpl, method: ImplItemMethod) -> proc_m
 
             (
                 quote! { .expect("actor disconnected") },
-                quote!(()),
+                quote!(#output),
                 quote!(#output),
             )
-        },
+        }
     };
     let fn_name = &sig.ident;
     let mut ctx_idx: Option<usize> = None;
@@ -198,7 +198,7 @@ pub fn transform_method(impl_block: &ItemImpl, method: ImplItemMethod) -> proc_m
                 m: Msg#fn_ty_generics,
                 ctx: &mut ::spaad::export::xtra::Context<Self>,
             ) -> #result {
-                let Msg { #(#msg_members_destructured)* } = m;
+                let Msg { #(#msg_members_destructured),* } = m;
                 self.#fn_name#fn_turbo(#(#call_inputs),*).await
             }
         };
@@ -209,7 +209,7 @@ pub fn transform_method(impl_block: &ItemImpl, method: ImplItemMethod) -> proc_m
                 m: Msg#fn_ty_generics,
                 ctx: &'a mut ::spaad::export::xtra::Context<Self>,
             ) -> Self::Responder<'a> {
-                let Msg { #(#msg_members_destructured)* } = m;
+                let Msg { #(#msg_members_destructured),* } = m;
                 self.#fn_name#fn_turbo(#(#call_inputs),*)
             }
         };
@@ -250,7 +250,7 @@ pub fn transform_method(impl_block: &ItemImpl, method: ImplItemMethod) -> proc_m
                     m: Msg#fn_ty_generics,
                     ctx: &mut ::spaad::export::xtra::Context<Self>
                 ) -> #result {
-                    let Msg { #(#msg_members_destructured)* } = m;
+                    let Msg { #(#msg_members_destructured),* } = m;
                     self.#fn_name#fn_turbo(#(#call_inputs),*)
                 }
             }
@@ -266,7 +266,7 @@ pub fn transform_method(impl_block: &ItemImpl, method: ImplItemMethod) -> proc_m
         {
             use ::spaad::export::xtra::prelude::*;
 
-            struct Msg#fn_impl_generics #fn_where { #(#msg_members)* };
+            struct Msg#fn_impl_generics #fn_where { #(#msg_members),* };
 
             impl#fn_impl_generics ::spaad::export::xtra::Message for Msg#fn_ty_generics
                 #fn_where
@@ -276,7 +276,7 @@ pub fn transform_method(impl_block: &ItemImpl, method: ImplItemMethod) -> proc_m
 
             #handler
 
-            let f = self.addr.send(Msg#fn_turbo { #(#msg_members_destructured)* });
+            let f = self.addr.send(Msg#fn_turbo { #(#msg_members_destructured),* });
             async { f.await#handle_result }
         }
     }
@@ -319,6 +319,7 @@ fn transform_static_methods(
             FnArg::Typed(t) => Some(&t.pat),
             _ => None,
         })
+        .map(|x| &**x)
         .collect();
 
     if has_create || has_spawn {
@@ -335,23 +336,28 @@ fn transform_static_methods(
         let method_ty_generics = sig.generics.split_for_impl().1;
         let method_turbo = method_ty_generics.as_turbofish();
         let act_turbo = impl_ty_generics.as_turbofish();
+        let dot_await = if sig.asyncness.is_some() {
+            Some(quote!(.await))
+        } else {
+            None
+        };
         let ImplItemMethod { attrs, vis, .. } = method;
 
         quote! {
             #(#attrs)* #vis #sig {
-                #actor_name#act_turbo::#fn_name#method_turbo(#(#inputs),*)
+                #actor_name#act_turbo::#fn_name#method_turbo(#(#inputs),*)#dot_await
             }
         }
     }
 }
 
-fn transform_constructors<'a>(
+fn transform_constructors(
     name: &Ident,
     actor_name: proc_macro2::TokenStream,
     method: ImplItemMethod,
     act_ty_generics: TypeGenerics,
     arg_inputs: &Punctuated<FnArg, Token![,]>,
-    inputs: Vec<&Box<Pat>>,
+    inputs: Vec<&Pat>,
 ) -> proc_macro2::TokenStream {
     let ImplItemMethod {
         attrs, vis, sig, ..

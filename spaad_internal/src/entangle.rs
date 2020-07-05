@@ -160,7 +160,7 @@ fn get_name_from_path(p: &Path) -> &proc_macro2::Ident {
 fn get_name_from_ty(ty: &syn::Type) -> Option<&proc_macro2::Ident> {
     match &*ty {
         Type::Path(path) => Some(get_name_from_path(&path.path)),
-        _ => None
+        _ => None,
     }
 }
 
@@ -192,8 +192,14 @@ fn get_actor_name(block: &ItemImpl) -> proc_macro2::TokenStream {
     let mod_name = format_ident!("__{}Actor", name);
 
     let _ = path.segments.pop();
-    path.segments.push(PathSegment { ident: mod_name.clone(), arguments: PathArguments::None });
-    path.segments.push(PathSegment { ident: name.clone(), arguments: PathArguments::None });
+    path.segments.push(PathSegment {
+        ident: mod_name,
+        arguments: PathArguments::None,
+    });
+    path.segments.push(PathSegment {
+        ident: name.clone(),
+        arguments: PathArguments::None,
+    });
 
     quote!(#path)
 }
