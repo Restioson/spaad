@@ -190,70 +190,36 @@ pub fn transform_method(impl_block: &ItemImpl, method: ImplItemMethod) -> proc_m
 
     let (handler_impl_generics, _, handler_where) = handler_generics.split_for_impl();
 
-    let handler = if sig.asyncness.is_some() {
-        #[cfg(not(feature = "nightly"))]
-        let handle = quote! {
-            async fn handle(
-                &mut self,
-                m: Msg#fn_ty_generics,
-                ctx: &mut ::spaad::export::xtra::Context<Self>,
-            ) -> #result {
-                let Msg { #(#msg_members_destructured),* } = m;
-                self.#fn_name#fn_turbo(#(#call_inputs),*).await
-            }
-        };
-        #[cfg(feature = "nightly")]
-        let handle = quote! {
-            fn handle<'a>(
-                &'a mut self,
-                m: Msg#fn_ty_generics,
-                ctx: &'a mut ::spaad::export::xtra::Context<Self>,
-            ) -> Self::Responder<'a> {
-                let Msg { #(#msg_members_destructured),* } = m;
-                self.#fn_name#fn_turbo(#(#call_inputs),*)
-            }
-        };
-
-        #[cfg(feature = "nightly")]
-        let responder = quote! {
-            type Responder<'a> = impl std::future::Future<Output = #result> + 'a;
-        };
-        #[cfg(not(feature = "nightly"))]
-        let responder = quote!();
-
-        #[cfg(feature = "nightly")]
-        let async_trait = quote!();
-        #[cfg(not(feature = "nightly"))]
-        let async_trait = quote!(#[::spaad::export::async_trait::async_trait]);
-
-        quote! {
-            #async_trait
-            #[allow(unused_variables)]
-            impl#handler_impl_generics
-                ::spaad::export::xtra::Handler<Msg#fn_ty_generics>
-            for #actor_name#act_ty_generics
-                 #handler_where
-            {
-                #responder #handle
-            }
-        }
+    let await_ = if sig.asyncness.is_some() {
+        Some(quote!(.await))
     } else {
-        quote! {
-            #[allow(unused_variables)]
-            impl#handler_impl_generics
-                ::spaad::export::xtra::SyncHandler<Msg#fn_ty_generics>
-            for #actor_name#act_ty_generics
-                 #handler_where
-            {
-                fn handle(
-                    &mut self,
-                    m: Msg#fn_ty_generics,
-                    ctx: &mut ::spaad::export::xtra::Context<Self>
-                ) -> #result {
-                    let Msg { #(#msg_members_destructured),* } = m;
-                    self.#fn_name#fn_turbo(#(#call_inputs),*)
-                }
-            }
+        None
+    };
+
+    let handle = quote! {
+        async fn handle(
+            &mut self,
+            m: Msg#fn_ty_generics,
+            ctx: &mut ::spaad::export::xtra::Context<Self>,
+        ) -> #result {
+            let Msg { #(#msg_members_destructured),* } = m;
+            self.#fn_name#fn_turbo(#(#call_inputs),*)#await_
+        }
+    };
+
+    let responder = quote!();
+
+    let async_trait = quote!(#[::spaad::export::async_trait::async_trait]);
+
+    let handler = quote! {
+        #async_trait
+        #[allow(unused_variables)]
+        impl#handler_impl_generics
+            ::spaad::export::xtra::Handler<Msg#fn_ty_generics>
+        for #actor_name#act_ty_generics
+             #handler_where
+        {
+            #responder #handle
         }
     };
 
@@ -360,7 +326,7 @@ fn transform_constructors(
     inputs: Vec<&Pat>,
 ) -> proc_macro2::TokenStream {
     let ImplItemMethod {
-        attrs, vis, sig, ..
+        attrs, vis, mut sig, ..
     } = method;
     let is_name = |ty, name| ty_is_name(ty, name);
 
@@ -374,31 +340,33 @@ fn transform_constructors(
         );
     }
 
-    let (impl_generics, ty_generics, where_clause) = sig.generics.split_for_impl();
+    let param = quote!(ActorSpawner: ::spaad::export::xtra::spawn::Spawner);
+    let param: GenericParam = syn::parse2(param).unwrap();
+    let old_generics = sig.generics.clone();
+    sig.generics.params.push(param);
+    let (impl_generics, _ty_generics, where_clause) = sig.generics.split_for_impl();
     let act_turbo = act_ty_generics.as_turbofish();
-    let fn_turbo = ty_generics.as_turbofish();
+    let (_, old_ty_generics, _) = old_generics.split_for_impl();
+    let fn_turbo = old_ty_generics.as_turbofish();
     let act_fn_name = &sig.ident;
 
     #[allow(unused_mut)]
     let mut spawn: Option<TokenStream> = None;
     #[allow(unused_variables)]
     if let Some(attr) = get_attr("spawn", &attrs) {
-        #[cfg(any(
-            feature = "with-tokio-0_2",
-            feature = "with-async_std-1",
-            feature = "with-smol-0_1"
-        ))]
-        {
-            let fn_name = get_ctor_name(&sig, attr);
-            spawn = Some(quote! {
-                #(#attrs)* #vis fn #fn_name#impl_generics(#arg_inputs) -> Self #where_clause {
-                    use ::spaad::export::xtra::prelude::*;
-                    let act = #actor_name#act_turbo::#act_fn_name#fn_turbo(#(#inputs),*);
-                    let addr = act.spawn();
-                    #name { addr }
-                }
-            });
-        }
+        let fn_name = get_ctor_name(&sig, attr);
+        spawn = Some(quote! {
+            #(#attrs)* #vis fn #fn_name#impl_generics(
+                #arg_inputs
+                actor_spawner: &mut ActorSpawner,
+            ) -> Self #where_clause {
+                use ::spaad::export::xtra::prelude::*;
+                let act = #actor_name#act_turbo::#act_fn_name#fn_turbo(#(#inputs),*);
+                let addr = act.create(::std::option::Option::None).spawn(actor_spawner);
+                #name { addr }
+            }
+        });
+
     };
 
     let mut create = None;
@@ -412,7 +380,7 @@ fn transform_constructors(
             {
                 use ::spaad::export::xtra::prelude::*;
                 let act = #actor_name#act_turbo::#act_fn_name#fn_turbo(#(#inputs),*);
-                let (addr, mgr) = act.create();
+                let (addr, mgr) = act.create(::std::option::Option::None);
                 (#name { addr }, mgr)
             }
         })

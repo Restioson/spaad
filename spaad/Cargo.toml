@@ -12,25 +12,18 @@ keywords = ["async", "actor", "futures", "async-await", "xtra"]
 categories = ["asynchronous", "concurrency"]
 
 [dependencies]
-spaad_internal = { version = "0.4.0-beta.1" }
-xtra = { version = "0.5.0-beta.3", default-features = false }
+spaad_internal = { path = "../spaad_internal" }
+xtra = { git = "https://github.com/Restioson/xtra", default-features = false }
 async-trait = { version = "^0.1" }
-
-[features]
-nightly = ["xtra/nightly", "spaad_internal/nightly"]
-with-tokio-0_2 = ["xtra/with-tokio-0_2", "spaad_internal/with-tokio-0_2"]
-with-async_std-1 = ["xtra/with-async_std-1", "spaad_internal/with-async_std-1"]
-with-smol-0_1 = ["xtra/with-smol-0_1", "spaad_internal/with-smol-0_1"]
 
 [dev-dependencies]
 tokio = { version = "^0.2", features = ["full"] }
+xtra = { git = "https://github.com/Restioson/xtra", features = ["with-tokio-0_2"] }
 
 [[example]]
 name = "complex"
 path = "examples/complex.rs"
-required-features = ["with-tokio-0_2"]
 
 [[example]]
 name = "basic"
 path = "examples/basic.rs"
-required-features = ["with-tokio-0_2"]

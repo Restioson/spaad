@@ -30,7 +30,7 @@ async fn main() {
     // Declared mut because intellij wants it to be - it doesn't actually have to be mut.
     // It appears that rust-analyzer does not have this issue, for whatever reason.
     #[allow(unused_mut)]
-    let mut printer = Printer::new();
+    let mut printer = Printer::new(&mut xtra::spawn::Tokio::Global);
 
     loop {
         printer.print("hello".to_string()).await;

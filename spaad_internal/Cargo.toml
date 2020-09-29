@@ -19,9 +19,3 @@ syn = { version = "^1.0.30", features = ["full", "extra-traits"] }
 proc-macro2 = "^1"
 async-trait = "0.1"
 proc-macro-error = "^1"
-
-[features]
-nightly = []
-with-tokio-0_2 = []
-with-async_std-1 = []
-with-smol-0_1 = []

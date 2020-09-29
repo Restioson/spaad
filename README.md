@@ -60,7 +60,8 @@ impl Printer {
 
 #[tokio::main]
 async fn main() {
-    let printer = Printer::new();
+    // a Spawner must be provided as the last argument here
+    let printer = Printer::new(&mut xtra::spawner::Tokio::Global);
 
     loop {
         printer.print("hello".to_string()).await;
