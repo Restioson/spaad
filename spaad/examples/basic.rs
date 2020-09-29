@@ -10,7 +10,7 @@ impl Actor for Printer {}
 
 #[spaad::entangled]
 impl Printer {
-    #[spaad::spawn]
+    #[spaad::spawn(spawner = "tokio")]
     pub fn new() -> Self {
         Printer { times: 0 }
     }
@@ -30,7 +30,7 @@ async fn main() {
     // Declared mut because intellij wants it to be - it doesn't actually have to be mut.
     // It appears that rust-analyzer does not have this issue, for whatever reason.
     #[allow(unused_mut)]
-    let mut printer = Printer::new(&mut xtra::spawn::Tokio::Global);
+    let mut printer = Printer::new();
 
     loop {
         printer.print("hello".to_string()).await;

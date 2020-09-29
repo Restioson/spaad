@@ -6,6 +6,7 @@ use std::ops::Deref;
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::*;
+use syn::export::TokenStream2;
 
 fn is_attr(name: &str, attr: &Attribute) -> bool {
     let mut iter = attr.path.segments.iter();
@@ -326,7 +327,7 @@ fn transform_constructors(
     inputs: Vec<&Pat>,
 ) -> proc_macro2::TokenStream {
     let ImplItemMethod {
-        attrs, vis, mut sig, ..
+        attrs, vis, sig, ..
     } = method;
     let is_name = |ty, name| ty_is_name(ty, name);
 
@@ -340,35 +341,53 @@ fn transform_constructors(
         );
     }
 
-    let param = quote!(ActorSpawner: ::spaad::export::xtra::spawn::Spawner);
-    let param: GenericParam = syn::parse2(param).unwrap();
-    let old_generics = sig.generics.clone();
-    sig.generics.params.push(param);
-    let (impl_generics, _ty_generics, where_clause) = sig.generics.split_for_impl();
-    let act_turbo = act_ty_generics.as_turbofish();
-    let (_, old_ty_generics, _) = old_generics.split_for_impl();
-    let fn_turbo = old_ty_generics.as_turbofish();
-    let act_fn_name = &sig.ident;
-
-    let trailing = if !arg_inputs.is_empty() && !arg_inputs.trailing_punct() {
-        Some(quote!(,))
-    } else {
-        None
-    };
-
-    #[allow(unused_mut)]
     let mut spawn: Option<TokenStream> = None;
-    #[allow(unused_variables)]
+
     if let Some(attr) = get_attr("spawn", &attrs) {
-        let fn_name = get_ctor_name(&sig, attr);
+        let spawner = get_spawner(attr);
+
+        let mut new_generics = sig.generics.clone();
+
+        if spawner.is_none() {
+            let param = quote!(ActorSpawner: ::spaad::export::xtra::spawn::Spawner);
+            let param: GenericParam = syn::parse2(param).unwrap();
+            new_generics.params.push(param);
+        }
+
+        let (impl_generics, _ty_generics, where_clause) = new_generics.split_for_impl();
+        let act_turbo = act_ty_generics.as_turbofish();
+        let (_, old_ty_generics, _) = sig.generics.split_for_impl();
+        let fn_turbo = old_ty_generics.as_turbofish();
+        let act_fn_name = &sig.ident;
+
+        let fn_name = get_ctor_name(&sig, attr, true);
+
+        let trailing = if !arg_inputs.is_empty() && !arg_inputs.trailing_punct() {
+            Some(quote!(,))
+        } else {
+            None
+        };
+        let spawner_arg = if spawner.is_some() {
+            None
+        } else {
+            Some(quote!(actor_spawner: &mut ActorSpawner,))
+        };
+        let spawner_arg = quote!(#trailing#spawner_arg);
+
+        let spawner_ref = if let Some(s) = spawner {
+            quote!(&mut #s)
+        } else {
+            quote!(actor_spawner)
+        };
+
         spawn = Some(quote! {
             #(#attrs)* #vis fn #fn_name#impl_generics(
-                #arg_inputs#trailing
-                actor_spawner: &mut ActorSpawner,
+                #arg_inputs
+                #spawner_arg
             ) -> Self #where_clause {
                 use ::spaad::export::xtra::prelude::*;
                 let act = #actor_name#act_turbo::#act_fn_name#fn_turbo(#(#inputs),*);
-                let addr = act.create(::std::option::Option::None).spawn(actor_spawner);
+                let addr = act.create(::std::option::Option::None).spawn(#spawner_ref);
                 #name { addr }
             }
         });
@@ -377,17 +396,22 @@ fn transform_constructors(
 
     let mut create = None;
     if let Some(attr) = get_attr("create", &attrs) {
-        let fn_name = get_ctor_name(&sig, attr);
+        let (impl_generics, ty_generics, where_clause) = sig.generics.split_for_impl();
+        let act_turbo = act_ty_generics.as_turbofish();
+        let fn_turbo = ty_generics.as_turbofish();
+        let act_fn_name = &sig.ident;
+
+        let fn_name = get_ctor_name(&sig, attr, false);
         create = Some(quote! {
             #(#attrs)* #vis fn #fn_name#impl_generics(
                 #arg_inputs
-            ) -> (Self, ::spaad::export::xtra::ActorManager<#actor_name#act_ty_generics>)
+            ) -> ::spaad::export::xtra::ActorManager<#actor_name#act_ty_generics>
                 #where_clause
             {
                 use ::spaad::export::xtra::prelude::*;
                 let act = #actor_name#act_turbo::#act_fn_name#fn_turbo(#(#inputs),*);
-                let (addr, mgr) = act.create(::std::option::Option::None);
-                (#name { addr }, mgr)
+                let mgr = act.create(::std::option::Option::None);
+                mgr
             }
         })
     };
@@ -395,22 +419,67 @@ fn transform_constructors(
     return quote!(#spawn #create);
 }
 
-fn get_ctor_name(sig: &Signature, attr: &Attribute) -> Ident {
+fn get_ctor_name(sig: &Signature, attr: &Attribute, spawn: bool) -> Ident {
     let fn_name = sig.ident.clone();
     // thx to serde for this fn
     match attr.parse_meta() {
-        Ok(Meta::List(MetaList { nested, .. })) => match nested.first().unwrap() {
-            NestedMeta::Meta(Meta::NameValue(name)) if name.path.is_ident("rename") => {
-                match &name.lit {
-                    Lit::Str(lit) => format_ident!("{}", lit.value()),
-                    _ => abort!(attr, "Expected rename target to be a string"),
+        Ok(Meta::List(MetaList { nested, .. })) => {
+            let mut iter = nested.iter();
+            while let Some(i) = iter.next() {
+                match i {
+                    NestedMeta::Meta(Meta::NameValue(name)) if name.path.is_ident("rename") => {
+                        match &name.lit {
+                            Lit::Str(lit) => return format_ident!("{}", lit.value()),
+                            _ => abort!(attr, "Expected rename target to be a string"),
+                        }
+                    }
+                    NestedMeta::Meta(Meta::NameValue(name))
+                        if name.path.is_ident("spawner") && spawn => {},
+                    _ => {
+                        if spawn {
+                            abort!(attr, "Only two valid arguments here: `rename` and `spawner`")
+                        } else {
+                            abort!(attr, "Only one valid argument here: `rename`")
+                        }
+                    },
                 }
             }
-            _ => abort!(
-                attr,
-                "Only one valid argument here: `rename = \"{target}\"`"
-            ),
+            fn_name
         },
         _ => fn_name,
+    }
+}
+
+fn get_spawner(attr: &Attribute) -> Option<TokenStream2> {
+    // thx to serde for this fn
+    match attr.parse_meta() {
+        Ok(Meta::List(MetaList { nested, .. })) => {
+            let mut iter = nested.iter();
+
+            while let Some(i) = iter.next() {
+                match i {
+                    NestedMeta::Meta(Meta::NameValue(name)) if name.path.is_ident("spawner") => {
+                        let spawner = match &name.lit {
+                            Lit::Str(lit) => match &*lit.value().to_lowercase() {
+                                "tokio" => quote!(::spaad::export::xtra::spawn::Tokio::Global),
+                                "async_std" => quote!(::spaad::export::xtra::spawn::AsyncStd),
+                                "smol" => quote!(::spaad::export::xtra::spawn::Smol::Global),
+                                "wasm_bindgen" => quote!(::spaad::export::xtra::spawn::WasmBindgen),
+                                _ => abort!(
+                            attr,
+                            "Expected one of \"tokio\", \"async_std\", \"smol\", \"wasm_bindgen\""
+                        ),
+                            },
+                            _ => abort!(attr, "Expected spawner to be a string"),
+                        };
+                        return Some(spawner)
+                    }
+                    _ => {}
+                }
+            }
+
+            None
+        },
+        _ => None,
     }
 }

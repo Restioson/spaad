@@ -10,11 +10,12 @@ where
 }
 
 #[spaad::entangled]
+#[async_trait::async_trait]
 impl<T: 'static + Send + Clone, A> xtra::Actor for X<T, A>
 where
     A: 'static + Send + Clone,
 {
-    fn started(&mut self, _: &mut xtra::Context<Self>) {}
+    async fn started(&mut self, _: &mut xtra::Context<Self>) {}
 }
 
 #[spaad::entangled]
@@ -22,9 +23,14 @@ impl<T: 'static + Send + Clone, A> X<T, A>
 where
     A: 'static + Send + Clone,
 {
-    #[spaad::spawn]
+    #[spaad::spawn(spawner = "tokio")]
     #[spaad::create(rename = "create")]
     pub fn new<Y: Into<i32>>(t: T, a: A, y: Y) -> X<T, A> {
+        X { t, a, b: y.into() }
+    }
+
+    #[spaad::spawn]
+    pub fn new_no_spawn<Y: Into<i32>>(t: T, a: A, y: Y) -> X<T, A> {
         X { t, a, b: y.into() }
     }
 
@@ -35,7 +41,7 @@ where
         println!("hello {}", h);
         println!("b = {}", self.as_ref()); // calling trait method on self
         self.blabla().await; // await needed - we are calling the async function itself.
-        ctx.notify_immediately(impl_somewhere_else::Notification); // interop with normal xtra
+        ctx.notify(impl_somewhere_else::Notification); // interop with normal xtra
     }
 
     #[spaad::handler]
@@ -112,7 +118,10 @@ where
 async fn main() {
     #[allow(unused_mut)] // for intellij we set as mut :)
     let mut x = X::<u32, u32>::new(1, 2, 0i32);
-    let x2 = tokio::spawn(X::<u32, u32>::create::<i32>(1, 2, 0i32).1.manage());
+    let (addr, fut) = X::<u32, u32>::create::<i32>(1, 2, 0i32).run();
+    tokio::spawn(fut);
+    let _x2: X::<u32, u32> = addr.into();
+    let _x3 = X::<u32, u32>::new_no_spawn(1, 2, 0i32, &mut xtra::spawn::Tokio::Global);
     let _ = x.handle_generically(1i32); // ignore result
     x.foo(1.0).await;
     assert!(x.bar().await.is_err()); // disconnected, so we assert that it returned error
