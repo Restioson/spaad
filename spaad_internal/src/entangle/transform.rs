@@ -350,6 +350,12 @@ fn transform_constructors(
     let fn_turbo = old_ty_generics.as_turbofish();
     let act_fn_name = &sig.ident;
 
+    let trailing = if !arg_inputs.is_empty() && !arg_inputs.trailing_punct() {
+        Some(quote!(,))
+    } else {
+        None
+    };
+
     #[allow(unused_mut)]
     let mut spawn: Option<TokenStream> = None;
     #[allow(unused_variables)]
@@ -357,7 +363,7 @@ fn transform_constructors(
         let fn_name = get_ctor_name(&sig, attr);
         spawn = Some(quote! {
             #(#attrs)* #vis fn #fn_name#impl_generics(
-                #arg_inputs
+                #arg_inputs#trailing
                 actor_spawner: &mut ActorSpawner,
             ) -> Self #where_clause {
                 use ::spaad::export::xtra::prelude::*;
