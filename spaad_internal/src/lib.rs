@@ -120,7 +120,15 @@ pub fn entangled(_args: TokenStream, input: TokenStream) -> TokenStream {
 ///
 /// ```ignore
 /// #[spaad::handler]
-/// async fn do_something() {/* ... */}
+/// async fn do_something(&mut self) {/* ... */}
+///
+/// // will generate a message for you
+/// #[spaad::handler]
+/// async fn do_something(&mut self, str: String) {/* ... */}
+///
+/// // will reuse an existing message
+/// #[spaad::handler(msg = AMsg)]
+/// async fn do_something_with_a_msg(&mut self, msg: AMsg) {/* ... */}
 /// ```
 #[proc_macro_attribute]
 pub fn handler(_args: TokenStream, input: TokenStream) -> TokenStream {
