@@ -72,12 +72,10 @@ fn lit_string_to_path(lit: &Lit) -> Path {
         _ => abort!(lit, "only string literals are allowed here"),
     };
 
-    let value = match value {
+    match value {
         Ok(p) => p,
         _ => abort!(lit, "value should be a valid type"),
-    };
-
-    value
+    }
 }
 
 fn is_context_ref(ty_ref: &TypeReference) -> bool {

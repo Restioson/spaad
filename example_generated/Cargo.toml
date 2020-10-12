@@ -8,5 +8,6 @@ edition = "2018"
 
 [dependencies]
 spaad = { path = "../spaad" }
-xtra = { git = "https://github.com/Restioson/xtra", default-features = false }
+xtra = { git = "https://github.com/Restioson/xtra", features = ["with-tokio-0_2"] }
+tokio = "^0.2.22"
 async-trait = "^0.1.40"
