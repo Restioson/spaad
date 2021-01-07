@@ -4,7 +4,7 @@ use proc_macro_error::abort;
 use quote::{format_ident, quote};
 use std::collections::HashMap;
 use std::ops::Deref;
-use syn::export::TokenStream2;
+use proc_macro2::TokenStream as TokenStream2;
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::*;

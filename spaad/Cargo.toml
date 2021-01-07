@@ -17,8 +17,8 @@ xtra = { git = "https://github.com/Restioson/xtra", default-features = false }
 async-trait = { version = "^0.1" }
 
 [dev-dependencies]
-tokio = { version = "^0.2", features = ["full"] }
-xtra = { git = "https://github.com/Restioson/xtra", features = ["with-tokio-0_2"] }
+tokio = { version = "^1", features = ["full"] }
+xtra = { git = "https://github.com/Restioson/xtra", features = ["with-tokio-1"] }
 
 [[example]]
 name = "complex"
