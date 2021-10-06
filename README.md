@@ -105,3 +105,7 @@ documentation or `complex.rs` in the examples directory. To see the generated co
 ## Nightly API
 
 In order to enable the xtra nightly API, disable the default `stable` feature in your `Cargo.toml`.
+
+## Version compatibility
+
+Spaad 0.4.0 is compatible with xtra 0.5.0.

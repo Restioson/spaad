@@ -1,6 +1,6 @@
 [package]
 name = "spaad"
-version = "0.4.0-beta.2"
+version = "0.4.0"
 authors = ["Restioson <restiosondev@gmail.com>"]
 edition = "2018"
 license = "MPL-2.0"
@@ -13,12 +13,12 @@ categories = ["asynchronous", "concurrency"]
 
 [dependencies]
 spaad_internal = { path = "../spaad_internal" }
-xtra = { git = "https://github.com/Restioson/xtra", default-features = false }
+xtra = { version = "0.5.1", default-features = false }
 async-trait = { version = "^0.1" }
 
 [dev-dependencies]
 tokio = { version = "^1", features = ["full"] }
-xtra = { git = "https://github.com/Restioson/xtra", features = ["with-tokio-1"] }
+xtra = { version = "0.5.1", features = ["with-tokio-1"] }
 
 [[example]]
 name = "complex"

@@ -1,6 +1,6 @@
 [package]
 name = "spaad_internal"
-version = "0.4.0-beta.1"
+version = "0.4.0"
 authors = ["Restioson <restiosondev@gmail.com>"]
 edition = "2018"
 license = "MPL-2.0"
