@@ -454,9 +454,10 @@ fn transform_constructors(
     } = method;
     let is_name = |ty, name| ty_is_name(ty, name);
 
+    let name_string = name.to_string();
     if matches!(
         &sig.output,
-        ReturnType::Type(_, ty) if !(is_name(ty, &name.to_string()) || is_name(ty, "Self"))
+        ReturnType::Type(_, ty) if !(is_name(ty, &name_string) || is_name(ty, "Self"))
     ) {
         abort!(
             sig.output,
