@@ -452,7 +452,7 @@ fn transform_constructors(
         sig,
         ..
     } = method;
-    let is_name = |ty, name| ty_is_name(ty, name);
+    use self::ty_is_name as is_name;
 
     if matches!(
         &sig.output,
